@@ -100,10 +100,7 @@
         </div>
     </div>
 
-    <div class="main">
-        <img src="ucmainccslogo.png">
-        <h1>Welcome to Sit-in Monitoring System</h1>
-    </div>
+    
 
 </body>
 </html>
