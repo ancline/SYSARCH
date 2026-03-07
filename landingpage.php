@@ -1,109 +1,149 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <title>CCS Sit-in Monitoring System</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta charset="UTF-8">
+<title>CCS Sit-in Monitoring System</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 
-    <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
+<style>
 
-        body {
-            font-family: Arial, sans-serif;
-            background-color: #ffffff;
-        }
+*{
+margin:0;
+padding:0;
+box-sizing:border-box;
+}
 
-        .navbar {
-            background-color: #9757d6;
-            padding: 10px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            color: white;
-        }
+body{
+font-family: Arial, sans-serif;
+background:#f5f6fa;
+}
 
-        
-        .nav-left {
-            display: flex;
-            align-items: center;
-            gap: 5px; 
-        }
+/* NAVBAR */
 
-        .nav-left img {
-            height: 40px;
-        }
+.navbar{
+background:#9757d6;
+padding:12px 40px;
+display:flex;
+justify-content:space-between;
+align-items:center;
+color:white;
+}
 
-        .navbar h1 {
-            font-size: 18px;
-            font-weight: normal;
-        }
+.nav-left{
+display:flex;
+align-items:center;
+gap:10px;
+}
 
-        .nav-links a {
-            color: white;
-            text-decoration: none;
-            margin-left: 20px;
-            font-size: 14px;
-        }
+.nav-left img{
+height:45px;
+}
 
-        .nav-links a:hover {
-            text-decoration: underline;
-        }
+.navbar h1{
+font-size:18px;
+font-weight:normal;
+}
 
-        .main {
-            padding: 60px 20px;
-            text-align: center;
-        }
+.nav-links a{
+color:white;
+text-decoration:none;
+margin-left:25px;
+font-size:15px;
+transition:0.3s;
+}
 
-        .main h2 {
-            font-size: 32px;
-            margin-bottom: 20px;
-            color: #333;
-        }
+.nav-links a:hover{
+opacity:0.7;
+}
 
-        .main p {
-            font-size: 18px;
-            margin-bottom: 30px;
-            color: #555;
-        }
+/* MAIN SECTION */
 
-        .btn {
-            padding: 10px 20px;
-            background-color: #1e4f91;
-            color: white;
-            text-decoration: none;
-            border-radius: 5px;
-        }
+.main{
+display:flex;
+justify-content:center;
+align-items:center;
+height:85vh;
+}
 
-        .btn:hover {
-            background-color: #163a6b;
-        }
-    </style>
+/* CARD */
+
+.welcome-card{
+background:white;
+padding:50px;
+border-radius:10px;
+box-shadow:0 10px 25px rgba(0,0,0,0.1);
+text-align:center;
+width:500px;
+}
+
+.welcome-card img{
+width:150px;
+margin-bottom:20px;
+}
+
+.welcome-card h2{
+font-size:28px;
+margin-bottom:15px;
+color:#333;
+}
+
+.welcome-card p{
+font-size:16px;
+color:#666;
+margin-bottom:25px;
+}
+
+.btn{
+display:inline-block;
+padding:10px 25px;
+background:#9757d6;
+color:white;
+text-decoration:none;
+border-radius:5px;
+transition:0.3s;
+}
+
+.btn:hover{
+background:#7c42b3;
+}
+
+</style>
 </head>
+
 <body>
 
-    <div class="navbar">
-        <div class="nav-left">
-            <img src="uclogo-removebg-preview.png" alt="CCS Logo">
-            <h1>College of Computer Studies Sit-in Monitoring System</h1>
-        </div>
+<div class="navbar">
 
-        <div class="nav-links">
-            <a href="landingpage.php">Home</a>
-            <a href="community.php">Community</a>
-            <a href="about.php">About</a>
-            <a href="login.php">Login</a>
-            <a href="register.php">Register</a>
-        </div>
-    </div>
+<div class="nav-left">
+    <img src="uclogo-removebg-preview.png">
+    <h1>College of Computer Studies Sit-in Monitoring System</h1>
+</div>
 
-    <div class="main">
-        <img src="ucmainccslogo.png">
-        <h1>Welcome to Sit-in Monitoring System</h1>
-    </div>
+<div class="nav-links">
+    <a href="landingpage.php">Home</a>
+    <a href="community.php">Community</a>
+    <a href="about.php">About</a>
+    <a href="login.php">Login</a>
+    <a href="register.php">Register</a>
+</div>
+
+</div>
+
+<div class="main">
+
+<div class="welcome-card">
+
+    <img src="ucmainccslogo.png">
+    <h2>Welcome to Sit-in Monitoring System</h2>
+
+    <p>Monitor student laboratory sit-ins, manage sessions, and track activity
+    inside the College of Computer Studies laboratories.</p>
+
+    <a href="login.php" class="btn">Get Started</a>
+
+</div>
+
+</div>
 
 </body>
 </html>
