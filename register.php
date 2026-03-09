@@ -43,6 +43,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
 
             if (empty($errors)) {
+                // Ensure the student table exists.
+                $createTableSql = "CREATE TABLE IF NOT EXISTS student (
+                    IdNumber VARCHAR(50) NOT NULL,
+                    LastName VARCHAR(100) NOT NULL,
+                    FirstName VARCHAR(100) NOT NULL,
+                    MiddleName VARCHAR(100),
+                    CourseLvl TINYINT NOT NULL,
+                    Email VARCHAR(255) NOT NULL,
+                    Password VARCHAR(255) NOT NULL,
+                    Course VARCHAR(255) NOT NULL,
+                    Address VARCHAR(255) NOT NULL,
+                    PRIMARY KEY (IdNumber),
+                    UNIQUE KEY (Email)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4";
+
+                if ($conn->query($createTableSql) === false) {
+                    $errors[] = 'Unable to create student table: ' . $conn->error;
+                }
+            }
+
+            if (empty($errors)) {
                 $passwordHash = password_hash($password, PASSWORD_DEFAULT);
 
                 $stmt = $conn->prepare("INSERT INTO student (IdNumber, LastName, FirstName, MiddleName, CourseLvl, Email, Password, Course, Address) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)");
@@ -305,7 +326,27 @@ h2 {
 
     <div class="form-group">
         <label for="course">Course</label>
-        <input type="text" id="course" name="course" placeholder="BSIT" value="<?= isset($course) ? htmlspecialchars($course) : '' ?>">
+        <select id="course" name="course">
+            <option value="" <?= empty($course) ? 'selected' : '' ?>>Select course</option>
+            <option value="Information Technology" <?= (isset($course) && $course === 'Information Technology') ? 'selected' : '' ?>>Information Technology</option>
+            <option value="Computer Engineering" <?= (isset($course) && $course === 'Computer Engineering') ? 'selected' : '' ?>>Computer Engineering</option>
+            <option value="Civil Engineering" <?= (isset($course) && $course === 'Civil Engineering') ? 'selected' : '' ?>>Civil Engineering</option>
+            <option value="Mechanical Engineering" <?= (isset($course) && $course === 'Mechanical Engineering') ? 'selected' : '' ?>>Mechanical Engineering</option>
+            <option value="Electrical Engineering" <?= (isset($course) && $course === 'Electrical Engineering') ? 'selected' : '' ?>>Electrical Engineering</option>
+            <option value="Industrial Engineering" <?= (isset($course) && $course === 'Industrial Engineering') ? 'selected' : '' ?>>Industrial Engineering</option>
+            <option value="Naval Architecture and Marine Engineering" <?= (isset($course) && $course === 'Naval Architecture and Marine Engineering') ? 'selected' : '' ?>>Naval Architecture and Marine Engineering</option>
+            <option value="Elementary Education (BEEd)" <?= (isset($course) && $course === 'Elementary Education (BEEd)') ? 'selected' : '' ?>>Elementary Education (BEEd)</option>
+            <option value="Secondary Education (BSEd)" <?= (isset($course) && $course === 'Secondary Education (BSEd)') ? 'selected' : '' ?>>Secondary Education (BSEd)</option>
+            <option value="Criminology" <?= (isset($course) && $course === 'Criminology') ? 'selected' : '' ?>>Criminology</option>
+            <option value="Commerce" <?= (isset($course) && $course === 'Commerce') ? 'selected' : '' ?>>Commerce</option>
+            <option value="Accountancy" <?= (isset($course) && $course === 'Accountancy') ? 'selected' : '' ?>>Accountancy</option>
+            <option value="Hotel and Restaurant Management" <?= (isset($course) && $course === 'Hotel and Restaurant Management') ? 'selected' : '' ?>>Hotel and Restaurant Management</option>
+            <option value="Customs Administration" <?= (isset($course) && $course === 'Customs Administration') ? 'selected' : '' ?>>Customs Administration</option>
+            <option value="Computer Secretarial" <?= (isset($course) && $course === 'Computer Secretarial') ? 'selected' : '' ?>>Computer Secretarial</option>
+            <option value="Industrial Psychology" <?= (isset($course) && $course === 'Industrial Psychology') ? 'selected' : '' ?>>Industrial Psychology</option>
+            <option value="AB Political Science" <?= (isset($course) && $course === 'AB Political Science') ? 'selected' : '' ?>>AB Political Science</option>
+            <option value="AB English" <?= (isset($course) && $course === 'AB English') ? 'selected' : '' ?>>AB English</option>
+        </select>
     </div>
 
     <div class="form-group">
