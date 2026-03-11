@@ -152,7 +152,7 @@ text-decoration:underline;
 
 <h2>Login</h2>
 
-<form action="login_process.php" method="POST">
+<form action="user_profile.php" method="POST">
 
 <div class="input-group">
     <label>Username</label>
