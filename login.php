@@ -147,29 +147,11 @@ body{
 
 
 <div class="main">
-<<<<<<< HEAD
-    <div class="login-box">
-        <h2>Login</h2>
-        <form action="login_process.php" method="POST">
-        <div class="input-group">
-            <label>Username</label>
-            <input type="text" name="username" required>
-        </div>
-        <div class="input-group">
-            <label>Password</label>
-            <input type="password" name="password" required>
-        </div>
-        <button class="login-btn" type="submit">Login</button>
-        </form>
-        <div class="register-link">Don't have an account? <a href="register.php">Register</a></div>
-    </div>
-=======
-
 <div class="login-box">
 
 <h2>Login</h2>
 
-<form action="user_profile.php" method="POST">
+<form action="student\home.php" method="POST">
 
 <div class="input-group">
     <label>Username</label>
@@ -189,7 +171,6 @@ body{
 
 </div>
 
->>>>>>> 930706c855a158fd18d821e1e98e39a6549c302e
 </div>
 
 </body>
