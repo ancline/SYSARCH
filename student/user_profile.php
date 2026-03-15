@@ -153,7 +153,7 @@ $year_level_text = isset($year_levels[$user['CourseLvl']]) ? $year_levels[$user[
             align-items: flex-start;
         }
 
-        /* ── FORM SIDE ── */
+        
         .form-side {
             flex: 1;
             min-width: 0;
@@ -248,27 +248,6 @@ $year_level_text = isset($year_levels[$user['CourseLvl']]) ? $year_levels[$user[
             transform: translateY(0);
         }
 
-        /* ── ILLUSTRATION SIDE ── */
-        .illustration-side {
-            width: 280px;
-            flex-shrink: 0;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            padding-top: 40px;
-        }
-
-        .illustration-side img {
-            width: 100%;
-            max-width: 280px;
-        }
-
-        /* Fallback SVG illustration */
-        .illus-svg {
-            width: 260px;
-        }
-
-        /* ── RESPONSIVE ── */
         @media (max-width: 768px) {
             .card {
                 flex-direction: column;
@@ -276,10 +255,6 @@ $year_level_text = isset($year_levels[$user['CourseLvl']]) ? $year_levels[$user[
                 gap: 30px;
             }
 
-            .illustration-side {
-                width: 100%;
-                padding-top: 0;
-            }
 
             .form-row {
                 grid-template-columns: 1fr;
@@ -296,7 +271,7 @@ $year_level_text = isset($year_levels[$user['CourseLvl']]) ? $year_levels[$user[
     <!-- NAVBAR -->
     <div class="navbar">
         <div class="nav-left">
-            <img src="uclogo-removebg-preview.png" alt="UC Logo">
+            <img src="/SYSARCH/uclogo-removebg-preview.png" alt="UC Logo">
             <h1>College of Computer Studies Sit-in Monitoring System</h1>
         </div>
         <div class="nav-links">
