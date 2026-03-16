@@ -1,49 +1,67 @@
 <?php
 session_start();
 
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $username = trim($_POST['username']);
-    $password = trim($_POST['password']);
+// Database connection
+$host    = "localhost";
+$dbname  = "students";
+$db_user = "root";
+$db_pass = "";
 
-    // ── ADMIN CHECK ──
-    $admin_username = 'admin';
-    $admin_password = 'admin123';
+$conn = new mysqli($host, $db_user, $db_pass, $dbname);
 
-    if ($username === $admin_username && $password === $admin_password) {
-        $_SESSION['admin'] = true;
-        $_SESSION['username'] = $username;
-        header('Location: admin/home.php');
-        exit();
-    }
+if ($conn->connect_error) {
+    die("Connection failed: " . $conn->connect_error);
+}
 
-    // ── STUDENT CHECK ──
-    $dbHost = '127.0.0.1';
-    $dbUser = 'root';
-    $dbPass = '';
-    $dbName = 'students';
+$error = "";
 
-    $conn = new mysqli($dbHost, $dbUser, $dbPass, $dbName);
-    if ($conn->connect_error) {
-        die('Database connection failed: ' . $conn->connect_error);
-    }
+if ($_SERVER["REQUEST_METHOD"] === "POST") {
+    $id_number = trim($_POST["username"]);
+    $password  = trim($_POST["password"]);
 
-    $stmt = $conn->prepare("SELECT * FROM student WHERE IdNumber = ? OR Email = ?");
-    $stmt->bind_param('ss', $username, $username);
-    $stmt->execute();
-    $result = $stmt->get_result();
-    $user = $result->fetch_assoc();
-    $stmt->close();
-    $conn->close();
-
-    if ($user && password_verify($password, $user['Password'])) {
-        $_SESSION['id_number'] = $user['IdNumber'];
-        $_SESSION['username']  = $user['FirstName'];
-        header('Location: student/home.php');
-        exit();
+    if (empty($id_number) || empty($password)) {
+        $error = "Please fill in all fields.";
     } else {
-        $error = 'Invalid username or password.';
+
+        // ── HARDCODED ADMIN CHECK ──
+        if ($id_number === "admin" && $password === "admin123") {
+            $_SESSION["admin_id"]      = "admin";
+            $_SESSION["admin_name"]    = "Administrator";
+            $_SESSION["logged_in"]     = true;
+            $_SESSION["role"]          = "admin";
+            header("Location: admin_home.php");
+            exit();
+        }
+
+        // ── STUDENT LOGIN ──
+        $stmt = $conn->prepare("SELECT * FROM student WHERE IdNumber = ?");
+        $stmt->bind_param("s", $id_number);
+        $stmt->execute();
+        $result = $stmt->get_result();
+
+        if ($result->num_rows === 1) {
+            $student = $result->fetch_assoc();
+
+            if (password_verify($password, $student["Password"])) {
+                $_SESSION["student_id"]   = $student["IdNumber"];
+                $_SESSION["student_name"] = $student["FirstName"] . " " . $student["LastName"];
+                $_SESSION["logged_in"]    = true;
+                $_SESSION["role"]         = "student";
+
+                header("Location: user_home.php");
+                exit();
+            } else {
+                $error = "Invalid ID Number or Password.";
+            }
+        } else {
+            $error = "Invalid ID Number or Password.";
+        }
+
+        $stmt->close();
     }
 }
+
+$conn->close();
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -114,16 +132,6 @@ body {
     color: #333;
 }
 
-.error-msg {
-    background: #fde8e8;
-    color: #c0392b;
-    border: 1px solid #f5c6cb;
-    padding: 10px;
-    border-radius: 5px;
-    font-size: 14px;
-    margin-bottom: 15px;
-}
-
 .input-group {
     margin-bottom: 15px;
     text-align: left;
@@ -163,6 +171,17 @@ body {
 }
 
 .register-link a:hover { text-decoration: underline; }
+
+/* ERROR MESSAGE */
+.error-msg {
+    background: #ffe0e0;
+    color: #c0392b;
+    border: 1px solid #f5c6cb;
+    padding: 10px;
+    border-radius: 4px;
+    margin-bottom: 15px;
+    font-size: 14px;
+}
 </style>
 </head>
 
@@ -188,27 +207,29 @@ body {
         <h2>Login</h2>
 
         <?php if (!empty($error)): ?>
-            <div class="error-msg"><?= htmlspecialchars($error) ?></div>
+            <div class="error-msg"><?php echo htmlspecialchars($error); ?></div>
         <?php endif; ?>
 
-        <form action="login.php" method="POST">
+        <form method="POST" action="login.php">
 
             <div class="input-group">
-                <label>Username</label>
-                <input type="text" name="username" required
-                       value="<?= isset($_POST['username']) ? htmlspecialchars($_POST['username']) : '' ?>">
+                <label>ID Number</label>
+                <input type="text" name="username" placeholder="Enter your ID Number"
+                       value="<?php echo htmlspecialchars($_POST['username'] ?? ''); ?>" required>
             </div>
 
             <div class="input-group">
                 <label>Password</label>
-                <input type="password" name="password" required>
+                <input type="password" name="password" placeholder="Enter your password" required>
             </div>
 
             <button class="login-btn" type="submit">Login</button>
 
         </form>
 
-        <div class="register-link">Don't have an account? <a href="register.php">Register</a></div>
+        <div class="register-link">
+            Don't have an account? <a href="register.php">Register</a>
+        </div>
 
     </div>
 </div>
