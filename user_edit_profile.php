@@ -277,7 +277,7 @@ if (!$user) {
         <a href="user_profile.php" class="active">Edit Profile</a>
         <a href="history.php">History</a>
         <a href="reservation.php">Reservation</a>
-        <a href="logout.php" class="btn-logout">Log out</a>
+        <a href="landingpage.php" class="btn-logout">Log out</a>
     </div>
 </div>
 

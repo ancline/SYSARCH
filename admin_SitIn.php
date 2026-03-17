@@ -111,7 +111,7 @@ if (!isset($_SESSION['student_id'])) {
         <h1>College of Computer Studies Sit-in Monitoring System</h1>
     </div>
     <div class="nav-links">
-        <a href="admin_home.php">Home ▾</a>
+        <a href="admin_home.php">Home</a>
         <a href="#">Search</a>
         <a href="admin_Student.php">Students</a>
         <a href="admin_SitIn.php">Sit-in</a>
