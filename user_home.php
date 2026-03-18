@@ -133,7 +133,7 @@ if (!isset($_SESSION['student_id'])) {
         <a href="user_edit_profile.php">Edit Profile</a>
         <a href="history.php">History</a>
         <a href="reservation.php">Reservation</a>
-        <a href="logout.php" class="btn-logout">Log out</a>
+        <a href="landingpage.php" class="btn-logout">Log out</a>
     </div>
 </div>
 
