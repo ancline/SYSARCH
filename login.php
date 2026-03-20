@@ -43,10 +43,14 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
             $student = $result->fetch_assoc();
 
             if (password_verify($password, $student["Password"])) {
-                $_SESSION["student_id"]   = $student["IdNumber"];
-                $_SESSION["student_name"] = $student["FirstName"] . " " . $student["LastName"];
-                $_SESSION["logged_in"]    = true;
-                $_SESSION["role"]         = "student";
+                $_SESSION["student_id"]        = $student["IdNumber"];
+                $_SESSION["student_name"]      = $student["FirstName"] . " " . $student["LastName"];
+                $_SESSION["logged_in"]         = true;
+                $_SESSION["role"]              = "student";
+                $_SESSION["email"]             = $student["Email"];
+                $_SESSION["course"]            = $student["Course"];
+                $_SESSION["year_level"]        = $student["CourseLvl"];
+                $_SESSION["sessions_remaining"] = $student["Sessions"] ?? 28;
 
                 header("Location: user_home.php");
                 exit();
@@ -69,166 +73,322 @@ $conn->close();
 <meta charset="UTF-8">
 <title>Login - CCS Sit-in Monitoring System</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=DM+Serif+Display&display=swap" rel="stylesheet">
 
 <style>
-* { margin:0; padding:0; box-sizing:border-box; }
-
-body {
-    font-family: Arial, sans-serif;
-    background: #f5f6fa;
+:root {
+    --navy:       #0f2653;
+    --navy-mid:   #1a3a72;
+    --navy-light: #2452a0;
+    --gold:       #f0a500;
+    --gold-light: #ffc84a;
+    --bg:         #eef1f8;
+    --panel:      #ffffff;
+    --border:     #d6dce8;
+    --text:       #1c2b4a;
+    --muted:      #6b7fa3;
+    --accent:     #3b6fd4;
+    --tag-bg:     #e8edf8;
 }
 
-/* NAVBAR */
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+    font-family: 'DM Sans', sans-serif;
+    background-color: var(--bg);
+    min-height: 100vh;
+    color: var(--text);
+}
+
+/* ── NAVBAR ── */
 .navbar {
-    background: #9757d6;
-    padding: 10px 20px;
+    background: linear-gradient(135deg, var(--navy) 0%, var(--navy-mid) 100%);
+    padding: 0 28px;
     display: flex;
     justify-content: space-between;
     align-items: center;
-    color: white;
+    height: 60px;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    box-shadow: 0 4px 20px rgba(15,38,83,0.35);
 }
 
 .nav-left {
     display: flex;
     align-items: center;
-    gap: 5px;
+    gap: 12px;
 }
 
-.nav-left img { height: 40px; }
+.nav-left img {
+    height: 38px;
+    filter: drop-shadow(0 2px 4px rgba(0,0,0,0.3));
+}
 
-.navbar h1 {
-    font-size: 18px;
-    font-weight: normal;
+.nav-title {
+    font-size: 13.5px;
+    font-weight: 600;
+    color: rgba(255,255,255,0.92);
+    letter-spacing: 0.3px;
+    line-height: 1.3;
+}
+
+.nav-divider {
+    width: 1px;
+    height: 28px;
+    background: rgba(255,255,255,0.2);
+    margin: 0 6px;
+}
+
+.nav-links {
+    display: flex;
+    align-items: center;
+    gap: 2px;
 }
 
 .nav-links a {
-    color: white;
+    color: rgba(255,255,255,0.85);
     text-decoration: none;
-    margin-left: 20px;
-    font-size: 14px;
+    font-size: 13px;
+    font-weight: 500;
+    padding: 7px 13px;
+    border-radius: 6px;
+    transition: background 0.18s, color 0.18s;
+    letter-spacing: 0.2px;
 }
 
-.nav-links a:hover { text-decoration: underline; }
+.nav-links a:hover {
+    background: rgba(255,255,255,0.12);
+    color: white;
+}
 
-/* LOGIN SECTION */
+.nav-links a.active {
+    background: rgba(255,255,255,0.18);
+    color: white;
+    font-weight: 700;
+}
+
+.btn-register {
+    background: linear-gradient(135deg, var(--gold), var(--gold-light)) !important;
+    color: #fff !important;
+    font-weight: 700 !important;
+    border-radius: 8px !important;
+    padding: 7px 18px !important;
+    margin-left: 6px;
+    box-shadow: 0 2px 8px rgba(240,165,0,0.4);
+    transition: transform 0.15s, box-shadow 0.15s !important;
+}
+
+.btn-register:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 14px rgba(240,165,0,0.5) !important;
+}
+
+/* ── LOGIN SECTION ── */
 .main {
     display: flex;
     justify-content: center;
     align-items: center;
-    height: 85vh;
+    min-height: calc(100vh - 60px);
+    padding: 40px 20px;
 }
 
-.login-box {
-    background: white;
-    padding: 40px;
-    width: 500px;
-    border-radius: 8px;
-    box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+.login-card {
+    background: var(--panel);
+    width: 100%;
+    max-width: 440px;
+    border-radius: 16px;
+    box-shadow: 0 4px 24px rgba(15,38,83,0.08);
+    border: 1px solid var(--border);
+    overflow: hidden;
+    animation: fadeUp 0.45s ease both;
+}
+
+@keyframes fadeUp {
+    from { opacity: 0; transform: translateY(18px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+
+.login-card-header {
+    background: linear-gradient(135deg, var(--navy) 0%, var(--navy-light) 100%);
+    padding: 22px 28px;
     text-align: center;
 }
 
-.login-box h2 {
-    margin-bottom: 20px;
-    color: #333;
+.login-card-header h2 {
+    font-family: 'DM Serif Display', serif;
+    font-size: 22px;
+    color: white;
+    letter-spacing: 0.3px;
+}
+
+.login-card-header p {
+    font-size: 12.5px;
+    color: rgba(255,255,255,0.65);
+    margin-top: 4px;
+}
+
+.login-card-body {
+    padding: 28px 28px 24px;
+}
+
+.error-msg {
+    background: #fff0f0;
+    color: #c0392b;
+    border: 1px solid #f5c6cb;
+    border-left: 4px solid #e74c3c;
+    padding: 10px 14px;
+    border-radius: 8px;
+    margin-bottom: 18px;
+    font-size: 13px;
 }
 
 .input-group {
-    margin-bottom: 15px;
-    text-align: left;
+    margin-bottom: 16px;
 }
 
-.input-group label { font-size: 14px; }
+.input-group label {
+    display: block;
+    font-size: 11.5px;
+    font-weight: 700;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 6px;
+}
 
 .input-group input {
     width: 100%;
-    padding: 8px;
-    margin-top: 5px;
-    border: 1px solid #ccc;
-    border-radius: 4px;
+    padding: 10px 14px;
+    border: 1px solid var(--border);
+    border-radius: 9px;
+    font-size: 13.5px;
+    font-family: 'DM Sans', sans-serif;
+    color: var(--text);
+    background: var(--bg);
+    transition: border-color 0.18s, box-shadow 0.18s;
+    outline: none;
+}
+
+.input-group input:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px rgba(59,111,212,0.12);
+    background: white;
+}
+
+.input-group input::placeholder {
+    color: #aab4c8;
 }
 
 .login-btn {
     width: 100%;
-    padding: 10px;
-    background: #9757d6;
+    padding: 11px;
+    background: linear-gradient(135deg, var(--navy), var(--navy-light));
     border: none;
     color: white;
-    border-radius: 5px;
+    border-radius: 9px;
     cursor: pointer;
-    font-size: 15px;
-}
-
-.login-btn:hover { background: #7c42b3; }
-
-.register-link {
-    margin-top: 15px;
     font-size: 14px;
+    font-weight: 700;
+    font-family: 'DM Sans', sans-serif;
+    letter-spacing: 0.3px;
+    margin-top: 4px;
+    box-shadow: 0 3px 12px rgba(15,38,83,0.25);
+    transition: transform 0.15s, box-shadow 0.15s;
 }
 
-.register-link a {
-    color: #9757d6;
+.login-btn:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 5px 18px rgba(15,38,83,0.35);
+}
+
+.login-btn:active {
+    transform: translateY(0);
+}
+
+.login-card-footer {
+    text-align: center;
+    padding: 0 28px 22px;
+    font-size: 13px;
+    color: var(--muted);
+}
+
+.login-card-footer a {
+    color: var(--accent);
+    font-weight: 600;
     text-decoration: none;
+    transition: color 0.15s;
 }
 
-.register-link a:hover { text-decoration: underline; }
+.login-card-footer a:hover {
+    color: var(--navy);
+    text-decoration: underline;
+}
 
-/* ERROR MESSAGE */
-.error-msg {
-    background: #ffe0e0;
-    color: #c0392b;
-    border: 1px solid #f5c6cb;
-    padding: 10px;
-    border-radius: 4px;
-    margin-bottom: 15px;
-    font-size: 14px;
+.divider {
+    height: 1px;
+    background: var(--border);
+    margin: 0 28px 18px;
 }
 </style>
 </head>
 
 <body>
 
+<!-- NAVBAR -->
 <div class="navbar">
     <div class="nav-left">
         <img src="uclogo-removebg-preview.png" alt="UC Logo">
-        <h1>College of Computer Studies Sit-in Monitoring System</h1>
+        <div class="nav-divider"></div>
+        <div class="nav-title">College of Computer Studies<br>Sit-in Monitoring System</div>
     </div>
     <div class="nav-links">
         <a href="landingpage.php">Home</a>
         <a href="community.php">Community</a>
         <a href="about.php">About</a>
-        <a href="login.php">Login</a>
-        <a href="register.php">Register</a>
+        <a href="login.php" class="active">Login</a>
+        <a href="register.php" class="btn-register">Register</a>
     </div>
 </div>
 
+<!-- LOGIN -->
 <div class="main">
-    <div class="login-box">
+    <div class="login-card">
 
-        <h2>Login</h2>
+        <div class="login-card-header">
+            <h2>Welcome Back</h2>
+            <p>Sign in to your student account</p>
+        </div>
 
-        <?php if (!empty($error)): ?>
-            <div class="error-msg"><?php echo htmlspecialchars($error); ?></div>
-        <?php endif; ?>
+        <div class="login-card-body">
 
-        <form method="POST" action="login.php">
+            <?php if (!empty($error)): ?>
+                <div class="error-msg"><?= htmlspecialchars($error) ?></div>
+            <?php endif; ?>
 
-            <div class="input-group">
-                <label>ID Number</label>
-                <input type="text" name="username" placeholder="Enter your ID Number"
-                       value="<?php echo htmlspecialchars($_POST['username'] ?? ''); ?>" required>
-            </div>
+            <form method="POST" action="login.php">
 
-            <div class="input-group">
-                <label>Password</label>
-                <input type="password" name="password" placeholder="Enter your password" required>
-            </div>
+                <div class="input-group">
+                    <label>ID Number</label>
+                    <input type="text" name="username" placeholder="Enter your ID Number"
+                           value="<?= htmlspecialchars($_POST['username'] ?? '') ?>" required>
+                </div>
 
-            <button class="login-btn" type="submit">Login</button>
+                <div class="input-group">
+                    <label>Password</label>
+                    <input type="password" name="password" placeholder="Enter your password" required>
+                </div>
 
-        </form>
+                <button class="login-btn" type="submit">Login</button>
 
-        <div class="register-link">
-            Don't have an account? <a href="register.php">Register</a>
+            </form>
+
+        </div>
+
+        <div class="divider"></div>
+
+        <div class="login-card-footer">
+            Don't have an account? <a href="register.php">Register here</a>
         </div>
 
     </div>
