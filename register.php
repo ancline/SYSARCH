@@ -8,16 +8,16 @@ $errors = [];
 $success = '';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $idNumber   = trim($_POST['idNumber'] ?? '');
-    $lastName   = trim($_POST['lastName'] ?? '');
-    $firstName  = trim($_POST['firstName'] ?? '');
-    $middleName = trim($_POST['middleName'] ?? '');
-    $courseLevel= trim($_POST['courseLevel'] ?? '');
-    $password   = $_POST['password'] ?? '';
-    $repeatPassword = $_POST['repeatPassword'] ?? '';
-    $email      = trim($_POST['email'] ?? '');
-    $course     = trim($_POST['course'] ?? '');
-    $address    = trim($_POST['address'] ?? '');
+    $idNumber       = trim($_POST['idNumber']       ?? '');
+    $lastName       = trim($_POST['lastName']       ?? '');
+    $firstName      = trim($_POST['firstName']      ?? '');
+    $middleName     = trim($_POST['middleName']     ?? '');
+    $course         = trim($_POST['course']         ?? '');
+    $courseLevel    = trim($_POST['courseLevel']    ?? '');
+    $password       = $_POST['password']            ?? '';
+    $repeatPassword = $_POST['repeatPassword']      ?? '';
+    $email          = trim($_POST['email']          ?? '');
+    $address        = trim($_POST['address']        ?? '');
 
     if ($password === '' || $repeatPassword === '') {
         $errors[] = 'Please enter and confirm your password.';
@@ -43,17 +43,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
 
             if (empty($errors)) {
-                // Ensure the student table exists.
                 $createTableSql = "CREATE TABLE IF NOT EXISTS student (
-                    IdNumber VARCHAR(50) NOT NULL,
-                    LastName VARCHAR(100) NOT NULL,
-                    FirstName VARCHAR(100) NOT NULL,
+                    IdNumber   VARCHAR(50)  NOT NULL,
+                    LastName   VARCHAR(100) NOT NULL,
+                    FirstName  VARCHAR(100) NOT NULL,
                     MiddleName VARCHAR(100),
-                    CourseLvl TINYINT NOT NULL,
-                    Email VARCHAR(255) NOT NULL,
-                    Password VARCHAR(255) NOT NULL,
-                    Course VARCHAR(255) NOT NULL,
-                    Address VARCHAR(255) NOT NULL,
+                    CourseLvl  TINYINT      NOT NULL,
+                    Email      VARCHAR(255) NOT NULL,
+                    Password   VARCHAR(255) NOT NULL,
+                    Course     VARCHAR(255) NOT NULL,
+                    Address    VARCHAR(255) NOT NULL,
                     PRIMARY KEY (IdNumber),
                     UNIQUE KEY (Email)
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4";
@@ -65,27 +64,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             if (empty($errors)) {
                 $passwordHash = password_hash($password, PASSWORD_DEFAULT);
-
                 $stmt = $conn->prepare("INSERT INTO student (IdNumber, LastName, FirstName, MiddleName, CourseLvl, Email, Password, Course, Address) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)");
 
                 if ($stmt === false) {
                     $errors[] = 'Query preparation failed: ' . $conn->error;
                 } else {
-                    $stmt->bind_param(
-                        'ssssissss',
-                        $idNumber,
-                        $lastName,
-                        $firstName,
-                        $middleName,
-                        $courseLevel,
-                        $email,
-                        $passwordHash,
-                        $course,
-                        $address
-                    );
+                    $stmt->bind_param('ssssissss', $idNumber, $lastName, $firstName, $middleName, $courseLevel, $email, $passwordHash, $course, $address);
 
                     if ($stmt->execute()) {
-                        $success = 'Registration successful! You can now <a href="login.php">login</a>.';
+                        $success = 'Registration successful! You can now <a href="login.php" style="color:var(--accent);font-weight:700;">log in</a>.';
                         $idNumber = $lastName = $firstName = $middleName = $courseLevel = $email = $course = $address = '';
                     } else {
                         if ($conn->errno === 1062) {
@@ -103,261 +90,521 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 ?>
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <title>CCS Sit-in Monitoring System - Register</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=DM+Serif+Display&display=swap" rel="stylesheet">
 
 <style>
-* {
-    margin: 0;
-    padding: 0;
-    box-sizing: border-box;
-}
+    :root {
+        --navy:       #0f2653;
+        --navy-mid:   #1a3a72;
+        --navy-light: #2452a0;
+        --gold:       #f0a500;
+        --gold-light: #ffc84a;
+        --bg:         #eef1f8;
+        --panel:      #ffffff;
+        --border:     #d6dce8;
+        --text:       #1c2b4a;
+        --muted:      #6b7fa3;
+        --accent:     #3b6fd4;
+        --tag-bg:     #e8edf8;
+    }
 
-body {
-    font-family: Arial, sans-serif;
-    background-color: #f4f4f4;
-}
+    * { margin: 0; padding: 0; box-sizing: border-box; }
 
-.navbar {
-    background-color: #9757d6;
-    padding: 10px;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    color: white;
-}
+    body {
+        font-family: 'DM Sans', sans-serif;
+        background-color: var(--bg);
+        min-height: 100vh;
+        color: var(--text);
+    }
 
-.nav-left {
-    display: flex;
-    align-items: center;
-    gap: 5px;
-}
+    /* ── NAVBAR ── */
+    .navbar {
+        background: linear-gradient(135deg, var(--navy) 0%, var(--navy-mid) 100%);
+        padding: 0 28px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        height: 60px;
+        position: sticky;
+        top: 0;
+        z-index: 100;
+        box-shadow: 0 4px 20px rgba(15,38,83,0.35);
+    }
 
-.nav-left img {
-    height: 40px;
-}
+    .nav-left { display: flex; align-items: center; gap: 12px; }
 
-.navbar h1 {
-    font-size: 18px;
-    font-weight: normal;
-}
+    .nav-left img {
+        height: 38px;
+        filter: drop-shadow(0 2px 4px rgba(0,0,0,0.3));
+    }
 
-.nav-links a {
-    color: white;
-    text-decoration: none;
-    margin-left: 20px;
-    font-size: 14px;
-}
+    .nav-title {
+        font-size: 13.5px;
+        font-weight: 600;
+        color: rgba(255,255,255,0.92);
+        letter-spacing: 0.3px;
+        line-height: 1.3;
+    }
 
-.nav-links a:hover {
-    text-decoration: underline;
-}
+    .nav-divider {
+        width: 1px;
+        height: 28px;
+        background: rgba(255,255,255,0.2);
+        margin: 0 6px;
+    }
 
-.main {
-    padding: 40px 20px;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    min-height: calc(100vh - 60px);
-}
+    .nav-links { display: flex; align-items: center; gap: 2px; }
 
-.registration-container {
-    background-color: white;
-    padding: 40px;
-    border-radius: 8px;
-    box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-    max-width: 500px;
-    width: 100%;
-}
+    .nav-links a {
+        color: rgba(255,255,255,0.85);
+        text-decoration: none;
+        font-size: 13px;
+        font-weight: 500;
+        padding: 7px 13px;
+        border-radius: 6px;
+        transition: background 0.18s, color 0.18s;
+        letter-spacing: 0.2px;
+    }
 
-.back-btn {
-    display: inline-block;
-    padding: 8px 20px;
-    background-color: #dc3545;
-    color: white;
-    border: none;
-    border-radius: 4px;
-    cursor: pointer;
-    font-size: 14px;
-    margin-bottom: 20px;
-    text-decoration: none;
-}
+    .nav-links a:hover { background: rgba(255,255,255,0.12); color: white; }
 
-.back-btn:hover {
-    background-color: #c82333;
-}
+    .nav-links a.active {
+        background: rgba(255,255,255,0.18);
+        color: white;
+        font-weight: 700;
+    }
 
-h2 {
-    font-size: 28px;
-    margin-bottom: 30px;
-    color: #333;
-}
+    .btn-login {
+        background: linear-gradient(135deg, var(--gold), var(--gold-light)) !important;
+        color: #fff !important;
+        font-weight: 700 !important;
+        border-radius: 8px !important;
+        padding: 7px 18px !important;
+        margin-left: 6px;
+        box-shadow: 0 2px 8px rgba(240,165,0,0.4);
+        transition: transform 0.15s, box-shadow 0.15s !important;
+    }
 
-.form-group {
-    margin-bottom: 15px;
-}
+    .btn-login:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 4px 14px rgba(240,165,0,0.5) !important;
+    }
 
-.form-group label {
-    display: block;
-    margin-bottom: 5px;
-    color: #555;
-    font-size: 14px;
-}
+    /* ── MAIN ── */
+    .main {
+        display: flex;
+        justify-content: center;
+        align-items: flex-start;
+        padding: 36px 20px 48px;
+        min-height: calc(100vh - 60px);
+    }
 
-.form-group input,
-.form-group select {
-    width: 100%;
-    padding: 10px;
-    border: 1px solid #ddd;
-    border-radius: 4px;
-    font-size: 14px;
-}
+    /* ── CARD ── */
+    .register-card {
+        background: var(--panel);
+        border-radius: 16px;
+        box-shadow: 0 4px 24px rgba(15,38,83,0.08);
+        border: 1px solid var(--border);
+        width: 100%;
+        max-width: 520px;
+        overflow: hidden;
+        animation: fadeUp 0.45s ease both;
+    }
 
-.form-group input:focus,
-.form-group select:focus {
-    outline: none;
-    border-color: #1e4f91;
-}
+    @keyframes fadeUp {
+        from { opacity: 0; transform: translateY(18px); }
+        to   { opacity: 1; transform: translateY(0); }
+    }
 
-.register-btn {
-    width: 100%;
-    padding: 12px;
-    background-color: #007bff;
-    color: white;
-    border: none;
-    border-radius: 4px;
-    font-size: 16px;
-    cursor: pointer;
-    margin-top: 10px;
-}
+    .card-header {
+        background: linear-gradient(135deg, var(--navy) 0%, var(--navy-light) 100%);
+        padding: 20px 28px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+    }
 
-.register-btn:hover {
-    background-color: #0056b3;
-}
+    .card-header h2 {
+        font-family: 'DM Serif Display', serif;
+        font-size: 20px;
+        color: white;
+    }
+
+    .btn-back {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        padding: 6px 14px;
+        background: rgba(255,255,255,0.15);
+        color: white;
+        text-decoration: none;
+        border-radius: 7px;
+        font-size: 12.5px;
+        font-weight: 600;
+        transition: background 0.15s;
+    }
+
+    .btn-back:hover { background: rgba(255,255,255,0.28); }
+
+    .card-body { padding: 28px 28px 24px; }
+
+    /* ── ALERTS ── */
+    .alert {
+        padding: 11px 16px;
+        border-radius: 9px;
+        margin-bottom: 20px;
+        font-size: 13.5px;
+        font-weight: 500;
+        border-left: 4px solid;
+    }
+
+    .alert-success {
+        background: #edfaf3;
+        color: #1a6e3f;
+        border-color: #2ecc71;
+    }
+
+    .alert-error {
+        background: #fff0f0;
+        color: #c0392b;
+        border-color: #e74c3c;
+    }
+
+    .alert-error ul { padding-left: 16px; margin: 0; }
+    .alert-error ul li { margin-top: 3px; }
+
+    /* ── SECTION LABEL ── */
+    .section-label {
+        font-size: 10.5px;
+        font-weight: 700;
+        color: var(--muted);
+        text-transform: uppercase;
+        letter-spacing: 0.6px;
+        margin: 20px 0 12px;
+    }
+
+    .section-label:first-child { margin-top: 0; }
+
+    .form-divider {
+        height: 1px;
+        background: var(--border);
+        margin: 20px 0;
+    }
+
+    /* ── FORM ── */
+    .form-group { margin-bottom: 14px; }
+
+    .form-group label {
+        display: block;
+        font-size: 11px;
+        font-weight: 700;
+        color: var(--muted);
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        margin-bottom: 6px;
+    }
+
+    .input-wrap {
+        display: flex;
+        align-items: center;
+        border: 1.5px solid var(--border);
+        border-radius: 9px;
+        overflow: hidden;
+        background: var(--bg);
+        transition: border-color 0.18s, box-shadow 0.18s, background 0.18s;
+    }
+
+    .input-wrap:focus-within {
+        border-color: var(--accent);
+        box-shadow: 0 0 0 3px rgba(59,111,212,0.1);
+        background: white;
+    }
+
+    .input-wrap .iicon {
+        padding: 0 12px;
+        color: var(--muted);
+        font-size: 14px;
+        flex-shrink: 0;
+    }
+
+    .input-wrap input,
+    .input-wrap select {
+        flex: 1;
+        border: none;
+        background: transparent;
+        padding: 10px 12px 10px 0;
+        font-size: 13.5px;
+        font-family: 'DM Sans', sans-serif;
+        color: var(--text);
+        outline: none;
+    }
+
+    .input-wrap select {
+        cursor: pointer;
+        appearance: none;
+        -webkit-appearance: none;
+    }
+
+    .input-wrap input::placeholder { color: #aab4c8; }
+
+    .form-row {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 14px;
+    }
+
+    /* ── REGISTER BUTTON ── */
+    .btn-register {
+        margin-top: 24px;
+        width: 100%;
+        padding: 12px;
+        background: linear-gradient(135deg, var(--navy), var(--navy-light));
+        color: white;
+        font-size: 14px;
+        font-weight: 700;
+        font-family: 'DM Sans', sans-serif;
+        border: none;
+        border-radius: 10px;
+        cursor: pointer;
+        letter-spacing: 0.3px;
+        box-shadow: 0 3px 12px rgba(15,38,83,0.22);
+        transition: transform 0.15s, box-shadow 0.15s;
+    }
+
+    .btn-register:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 5px 18px rgba(15,38,83,0.32);
+    }
+
+    /* ── FOOTER ── */
+    .card-footer {
+        padding: 0 28px 22px;
+        text-align: center;
+        font-size: 13px;
+        color: var(--muted);
+        border-top: 1px solid var(--border);
+        padding-top: 18px;
+        margin-top: 4px;
+    }
+
+    .card-footer a {
+        color: var(--accent);
+        font-weight: 700;
+        text-decoration: none;
+    }
+
+    .card-footer a:hover { text-decoration: underline; }
+
+    @media (max-width: 560px) {
+        .form-row { grid-template-columns: 1fr; }
+        .card-body { padding: 22px 18px 18px; }
+        .nav-title { display: none; }
+    }
 </style>
 </head>
 <body>
 
+<!-- NAVBAR -->
 <div class="navbar">
     <div class="nav-left">
-        <img src="uclogo-removebg-preview.png" alt="CCS Logo">
-        <h1>College of Computer Studies Sit-in Monitoring System</h1>
+        <img src="uclogo-removebg-preview.png" alt="UC Logo">
+        <div class="nav-divider"></div>
+        <div class="nav-title">College of Computer Studies<br>Sit-in Monitoring System</div>
     </div>
     <div class="nav-links">
         <a href="landingpage.php">Home</a>
         <a href="community.php">Community</a>
         <a href="about.php">About</a>
         <a href="login.php">Login</a>
-        <a href="register.php">Register</a>
+        <a href="register.php" class="active btn-login">Register</a>
     </div>
 </div>
 
+<!-- MAIN -->
 <div class="main">
-<div class="registration-container">
+    <div class="register-card">
 
-    <a href="landingpage.php" class="back-btn">Back</a>
-    <h2>Sign up</h2>
-
-    <form method="post" action="">
-    <?php if (!empty($success)): ?>
-        <div style="margin-bottom: 16px; padding: 12px; background: #d4edda; border: 1px solid #c3e6cb; color: #155724; border-radius: 4px;">
-            <?= $success ?>
+        <div class="card-header">
+            <h2>Create an Account</h2>
+            <a href="landingpage.php" class="btn-back">← Back</a>
         </div>
-    <?php endif; ?>
-    <?php if (!empty($errors)): ?>
-        <div style="margin-bottom: 16px; padding: 12px; background: #f8d7da; border: 1px solid #f5c6cb; color: #721c24; border-radius: 4px;">
-            <ul style="margin: 0; padding-left: 18px;">
-                <?php foreach ($errors as $error): ?>
-                    <li><?= htmlspecialchars($error) ?></li>
-                <?php endforeach; ?>
-            </ul>
+
+        <div class="card-body">
+
+            <?php if (!empty($success)): ?>
+                <div class="alert alert-success">✅ <?= $success ?></div>
+            <?php endif; ?>
+
+            <?php if (!empty($errors)): ?>
+                <div class="alert alert-error">
+                    <ul>
+                        <?php foreach ($errors as $error): ?>
+                            <li><?= htmlspecialchars($error) ?></li>
+                        <?php endforeach; ?>
+                    </ul>
+                </div>
+            <?php endif; ?>
+
+            <form method="POST" action="">
+
+                <!-- PERSONAL INFO -->
+                <div class="section-label">Personal Information</div>
+
+                <div class="form-group">
+                    <label>ID Number</label>
+                    <div class="input-wrap">
+                        <span class="iicon">🪪</span>
+                        <input type="number" name="idNumber" placeholder="e.g. 3677937"
+                               value="<?= htmlspecialchars($idNumber ?? '') ?>" required>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label>Last Name</label>
+                    <div class="input-wrap">
+                        <span class="iicon">👤</span>
+                        <input type="text" name="lastName" placeholder="Last Name"
+                               value="<?= htmlspecialchars($lastName ?? '') ?>" required>
+                    </div>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>First Name</label>
+                        <div class="input-wrap">
+                            <span class="iicon">👤</span>
+                            <input type="text" name="firstName" placeholder="First Name"
+                                   value="<?= htmlspecialchars($firstName ?? '') ?>" required>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label>Middle Name</label>
+                        <div class="input-wrap">
+                            <span class="iicon">👤</span>
+                            <input type="text" name="middleName" placeholder="Middle Name"
+                                   value="<?= htmlspecialchars($middleName ?? '') ?>">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label>Email Address</label>
+                    <div class="input-wrap">
+                        <span class="iicon">📧</span>
+                        <input type="email" name="email" placeholder="your@email.com"
+                               value="<?= htmlspecialchars($email ?? '') ?>" required>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label>Address</label>
+                    <div class="input-wrap">
+                        <span class="iicon">📍</span>
+                        <input type="text" name="address" placeholder="Home Address"
+                               value="<?= htmlspecialchars($address ?? '') ?>" required>
+                    </div>
+                </div>
+
+                <div class="form-divider"></div>
+
+                <!-- ACADEMIC INFO -->
+                <div class="section-label">Academic Information</div>
+
+                <div class="form-group">
+                    <label>Course</label>
+                    <div class="input-wrap">
+                        <span class="iicon">🎓</span>
+                        <select name="course" required>
+                            <option value="" <?= empty($course ?? '') ? 'selected' : '' ?>>Select course…</option>
+                            <?php
+                            $courses = [
+                                'Information Technology','Computer Engineering','Civil Engineering',
+                                'Mechanical Engineering','Electrical Engineering','Industrial Engineering',
+                                'Naval Architecture and Marine Engineering','Elementary Education (BEEd)',
+                                'Secondary Education (BSEd)','Criminology','Commerce','Accountancy',
+                                'Hotel and Restaurant Management','Customs Administration',
+                                'Computer Secretarial','Industrial Psychology','AB Political Science','AB English',
+                            ];
+                            foreach ($courses as $c): ?>
+                            <option value="<?= htmlspecialchars($c) ?>" <?= (isset($course) && $course === $c) ? 'selected' : '' ?>>
+                                <?= htmlspecialchars($c) ?>
+                            </option>
+                            <?php endforeach; ?>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label>Year Level</label>
+                    <div class="input-wrap">
+                        <span class="iicon">📚</span>
+                        <select name="courseLevel" required>
+                            <?php for ($y = 1; $y <= 4; $y++): ?>
+                            <option value="<?= $y ?>" <?= (isset($courseLevel) && $courseLevel == $y) ? 'selected' : '' ?>>
+                                Year <?= $y ?>
+                            </option>
+                            <?php endfor; ?>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="form-divider"></div>
+
+                <!-- PASSWORD -->
+                <div class="section-label">Security</div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Password</label>
+                        <div class="input-wrap">
+                            <span class="iicon">🔒</span>
+                            <input type="password" name="password" id="password"
+                                   placeholder="••••••••" minlength="6" required>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label>Confirm Password</label>
+                        <div class="input-wrap">
+                            <span class="iicon">🔒</span>
+                            <input type="password" name="repeatPassword" id="repeatPassword"
+                                   placeholder="••••••••" required>
+                        </div>
+                        <p id="passHint" style="font-size:11.5px;color:#e74c3c;margin-top:5px;display:none;">
+                            Passwords do not match.
+                        </p>
+                    </div>
+                </div>
+
+                <button type="submit" class="btn-register">✅ Register</button>
+
+            </form>
         </div>
-    <?php endif; ?>
 
-    <div class="form-group">
-        <label for="idNumber">ID Number</label>
-        <input type="number" id="idNumber" name="idNumber" value="<?= isset($idNumber) ? htmlspecialchars($idNumber) : '' ?>">
+        <div class="card-footer">
+            Already have an account? <a href="login.php">Log in here</a>
+        </div>
+
     </div>
-
-    <div class="form-group">
-        <label for="lastName">Last Name</label>
-        <input type="text" id="lastName" name="lastName" value="<?= isset($lastName) ? htmlspecialchars($lastName) : '' ?>">
-    </div>
-
-    <div class="form-group">
-        <label for="firstName">First Name</label>
-        <input type="text" id="firstName" name="firstName" value="<?= isset($firstName) ? htmlspecialchars($firstName) : '' ?>">
-    </div>
-
-    <div class="form-group">
-        <label for="middleName">Middle Name</label>
-        <input type="text" id="middleName" name="middleName" value="<?= isset($middleName) ? htmlspecialchars($middleName) : '' ?>">
-    </div>
-
-    <div class="form-group">
-        <label for="courseLevel">Course Level</label>
-        <select id="courseLevel" name="courseLevel">
-            <option value="1" <?= (isset($courseLevel) && $courseLevel === '1') ? 'selected' : '' ?>>1</option>
-            <option value="2" <?= (isset($courseLevel) && $courseLevel === '2') ? 'selected' : '' ?>>2</option>
-            <option value="3" <?= (isset($courseLevel) && $courseLevel === '3') ? 'selected' : '' ?>>3</option>
-            <option value="4" <?= (isset($courseLevel) && $courseLevel === '4') ? 'selected' : '' ?>>4</option>
-        </select>
-    </div>
-
-    <div class="form-group">
-        <label for="password">Password</label>
-        <input type="password" id="password" name="password">
-    </div>
-
-    <div class="form-group">
-        <label for="repeatPassword">Repeat your password</label>
-        <input type="password" id="repeatPassword" name="repeatPassword">
-    </div>
-
-    <div class="form-group">
-        <label for="email">Email</label>
-        <input type="email" id="email" name="email" value="<?= isset($email) ? htmlspecialchars($email) : '' ?>">
-    </div>
-
-    <div class="form-group">
-        <label for="course">Course</label>
-        <select id="course" name="course">
-            <option value="" <?= empty($course) ? 'selected' : '' ?>>Select course</option>
-            <option value="Information Technology" <?= (isset($course) && $course === 'Information Technology') ? 'selected' : '' ?>>Information Technology</option>
-            <option value="Computer Engineering" <?= (isset($course) && $course === 'Computer Engineering') ? 'selected' : '' ?>>Computer Engineering</option>
-            <option value="Civil Engineering" <?= (isset($course) && $course === 'Civil Engineering') ? 'selected' : '' ?>>Civil Engineering</option>
-            <option value="Mechanical Engineering" <?= (isset($course) && $course === 'Mechanical Engineering') ? 'selected' : '' ?>>Mechanical Engineering</option>
-            <option value="Electrical Engineering" <?= (isset($course) && $course === 'Electrical Engineering') ? 'selected' : '' ?>>Electrical Engineering</option>
-            <option value="Industrial Engineering" <?= (isset($course) && $course === 'Industrial Engineering') ? 'selected' : '' ?>>Industrial Engineering</option>
-            <option value="Naval Architecture and Marine Engineering" <?= (isset($course) && $course === 'Naval Architecture and Marine Engineering') ? 'selected' : '' ?>>Naval Architecture and Marine Engineering</option>
-            <option value="Elementary Education (BEEd)" <?= (isset($course) && $course === 'Elementary Education (BEEd)') ? 'selected' : '' ?>>Elementary Education (BEEd)</option>
-            <option value="Secondary Education (BSEd)" <?= (isset($course) && $course === 'Secondary Education (BSEd)') ? 'selected' : '' ?>>Secondary Education (BSEd)</option>
-            <option value="Criminology" <?= (isset($course) && $course === 'Criminology') ? 'selected' : '' ?>>Criminology</option>
-            <option value="Commerce" <?= (isset($course) && $course === 'Commerce') ? 'selected' : '' ?>>Commerce</option>
-            <option value="Accountancy" <?= (isset($course) && $course === 'Accountancy') ? 'selected' : '' ?>>Accountancy</option>
-            <option value="Hotel and Restaurant Management" <?= (isset($course) && $course === 'Hotel and Restaurant Management') ? 'selected' : '' ?>>Hotel and Restaurant Management</option>
-            <option value="Customs Administration" <?= (isset($course) && $course === 'Customs Administration') ? 'selected' : '' ?>>Customs Administration</option>
-            <option value="Computer Secretarial" <?= (isset($course) && $course === 'Computer Secretarial') ? 'selected' : '' ?>>Computer Secretarial</option>
-            <option value="Industrial Psychology" <?= (isset($course) && $course === 'Industrial Psychology') ? 'selected' : '' ?>>Industrial Psychology</option>
-            <option value="AB Political Science" <?= (isset($course) && $course === 'AB Political Science') ? 'selected' : '' ?>>AB Political Science</option>
-            <option value="AB English" <?= (isset($course) && $course === 'AB English') ? 'selected' : '' ?>>AB English</option>
-        </select>
-    </div>
-
-    <div class="form-group">
-        <label for="address">Address</label>
-        <input type="text" id="address" name="address" value="<?= isset($address) ? htmlspecialchars($address) : '' ?>">
-    </div>
-
-    <button type="submit" class="register-btn">Register</button>
-    </form>
 </div>
-</div>
+
+<script>
+    const pw  = document.getElementById('password');
+    const pwc = document.getElementById('repeatPassword');
+    const hint = document.getElementById('passHint');
+
+    function checkPass() {
+        hint.style.display = (pwc.value && pw.value !== pwc.value) ? 'block' : 'none';
+    }
+
+    pw.addEventListener('input', checkPass);
+    pwc.addEventListener('input', checkPass);
+</script>
 
 </body>
 </html>
