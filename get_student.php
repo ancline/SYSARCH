@@ -26,7 +26,7 @@ if ($conn->connect_error) {
     exit();
 }
 
-// Auto-detect the sessions column name
+// Auto-detect the sessions column name from the student table
 $session_col = null;
 $cols = $conn->query("SHOW COLUMNS FROM student");
 while ($col = $cols->fetch_assoc()) {
@@ -46,11 +46,14 @@ $stmt->execute();
 $result = $stmt->get_result();
 
 if ($result->num_rows === 1) {
-    $row = $result->fetch_assoc();
+    $row      = $result->fetch_assoc();
+    $sessions = isset($row['sessions']) ? (int)$row['sessions'] : 0;
+
     echo json_encode([
         'found'    => true,
         'name'     => trim($row['FirstName'] . ' ' . $row['LastName']),
-        'sessions' => isset($row['sessions']) ? (int)$row['sessions'] : '—',
+        'sessions' => $sessions,
+        'can_sitin' => $sessions > 0,
     ]);
 } else {
     echo json_encode(['found' => false]);

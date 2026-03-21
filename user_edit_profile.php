@@ -485,14 +485,42 @@ if (!$user) {
                         </div>
                     </div>
                     <div class="form-group">
-                        <label>Course</label>
-                        <div class="input-wrapper">
-                            <span class="icon">🎓</span>
-                            <input type="text" name="course" required maxlength="100"
-                                   value="<?= htmlspecialchars($user['Course']) ?>"
-                                   placeholder="e.g. BSIT">
-                        </div>
-                    </div>
+    <label>Course</label>
+    <div class="input-wrapper">
+        <span class="icon">🎓</span>
+        <select name="course" required>
+            <option value="" disabled <?= empty($user['Course']) ? 'selected' : '' ?>>Select Course</option>
+            <?php
+            $courses = [
+                'Information Technology',
+                'Computer Engineering',
+                'Civil Engineering',
+                'Mechanical Engineering',
+                'Electrical Engineering',
+                'Industrial Engineering',
+                'Naval Architecture and Marine Engineering',
+                'Elementary Education (BEEd)',
+                'Secondary Education (BSEd)',
+                'Criminology',
+                'Commerce',
+                'Accountancy',
+                'Hotel and Restaurant Management',
+                'Customs Administration',
+                'Computer Secretarial',
+                'Industrial Psychology',
+                'AB Political Science',
+                'AB English',
+            ];
+            foreach ($courses as $course): ?>
+                <option value="<?= htmlspecialchars($course) ?>"
+                    <?= $user['Course'] === $course ? 'selected' : '' ?>>
+                    <?= htmlspecialchars($course) ?>
+                </option>
+            <?php endforeach; ?>
+        </select>
+        <span class="select-arrow">▾</span>
+    </div>
+</div>
                 </div>
 
                 <div class="form-divider"></div>

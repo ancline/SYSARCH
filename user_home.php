@@ -16,29 +16,25 @@ if ($conn->connect_error) {
     die("Connection failed: " . $conn->connect_error);
 }
 
-// Auto-detect sessions column name
-$session_col = null;
-$cols = $conn->query("SHOW COLUMNS FROM student");
-while ($col = $cols->fetch_assoc()) {
-    if (preg_match('/^(sessions?|no_?of_?sessions?|remaining_?sessions?|session_?count)$/i', $col['Field'])) {
-        $session_col = $col['Field'];
-        break;
-    }
+// Fetch sessions remaining from the most recent sitin record for this student
+// Falls back to 0 if no record exists or sessions is NULL
+$sessions_remaining = 0;
+$stmt = $conn->prepare("
+    SELECT sessions 
+    FROM sitin 
+    WHERE student_id = ? 
+      AND sessions IS NOT NULL 
+    ORDER BY id DESC 
+    LIMIT 1
+");
+$stmt->bind_param('s', $_SESSION['student_id']);
+$stmt->execute();
+$row = $stmt->get_result()->fetch_assoc();
+if ($row) {
+    $sessions_remaining = (int)$row['sessions'];
+    $_SESSION['sessions_remaining'] = $sessions_remaining;
 }
-
-// Fetch live session count from DB
-$sessions_remaining = $_SESSION['sessions_remaining'] ?? 0;
-if ($session_col) {
-    $stmt = $conn->prepare("SELECT `$session_col` AS sessions FROM student WHERE IdNumber = ?");
-    $stmt->bind_param('s', $_SESSION['student_id']);
-    $stmt->execute();
-    $row = $stmt->get_result()->fetch_assoc();
-    if ($row) {
-        $sessions_remaining = (int)$row['sessions'];
-        $_SESSION['sessions_remaining'] = $sessions_remaining;
-    }
-    $stmt->close();
-}
+$stmt->close();
 
 // Fetch announcements from DB
 $announcements = [];
@@ -95,100 +91,54 @@ $conn->close();
         .navbar {
             background: linear-gradient(135deg, var(--navy) 0%, var(--navy-mid) 100%);
             padding: 0 28px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            height: 60px;
-            position: sticky;
-            top: 0;
-            z-index: 100;
+            display: flex; justify-content: space-between; align-items: center;
+            height: 60px; position: sticky; top: 0; z-index: 100;
             box-shadow: 0 4px 20px rgba(15,38,83,0.35);
         }
 
-        .nav-left {
-            display: flex;
-            align-items: center;
-            gap: 12px;
-        }
-
+        .nav-left { display: flex; align-items: center; gap: 12px; }
         .nav-left img { height: 38px; filter: drop-shadow(0 2px 4px rgba(0,0,0,0.3)); }
 
         .nav-title {
-            font-size: 13.5px;
-            font-weight: 600;
-            color: rgba(255,255,255,0.92);
-            letter-spacing: 0.3px;
-            line-height: 1.3;
+            font-size: 13.5px; font-weight: 600;
+            color: rgba(255,255,255,0.92); letter-spacing: 0.3px; line-height: 1.3;
         }
 
-        .nav-divider {
-            width: 1px;
-            height: 28px;
-            background: rgba(255,255,255,0.2);
-            margin: 0 6px;
-        }
+        .nav-divider { width: 1px; height: 28px; background: rgba(255,255,255,0.2); margin: 0 6px; }
 
-        .nav-links {
-            display: flex;
-            align-items: center;
-            gap: 2px;
-        }
+        .nav-links { display: flex; align-items: center; gap: 2px; }
 
         .nav-links a {
-            color: rgba(255,255,255,0.85);
-            text-decoration: none;
-            font-size: 13px;
-            font-weight: 500;
-            padding: 7px 13px;
-            border-radius: 6px;
-            transition: background 0.18s, color 0.18s;
-            letter-spacing: 0.2px;
+            color: rgba(255,255,255,0.85); text-decoration: none;
+            font-size: 13px; font-weight: 500; padding: 7px 13px;
+            border-radius: 6px; transition: background 0.18s, color 0.18s; letter-spacing: 0.2px;
         }
 
-        .nav-links a:hover {
-            background: rgba(255,255,255,0.12);
-            color: white;
-        }
-
-        .nav-links a.active {
-            background: rgba(255,255,255,0.18);
-            color: white;
-            font-weight: 700;
-        }
+        .nav-links a:hover { background: rgba(255,255,255,0.12); color: white; }
+        .nav-links a.active { background: rgba(255,255,255,0.18); color: white; font-weight: 700; }
 
         .btn-logout {
             background: linear-gradient(135deg, var(--gold), var(--gold-light)) !important;
-            color: #fff !important;
-            font-weight: 700 !important;
-            border-radius: 8px !important;
-            padding: 7px 18px !important;
-            margin-left: 6px;
-            box-shadow: 0 2px 8px rgba(240,165,0,0.4);
+            color: #fff !important; font-weight: 700 !important;
+            border-radius: 8px !important; padding: 7px 18px !important;
+            margin-left: 6px; box-shadow: 0 2px 8px rgba(240,165,0,0.4);
             transition: transform 0.15s, box-shadow 0.15s !important;
         }
 
-        .btn-logout:hover {
-            transform: translateY(-1px);
-            box-shadow: 0 4px 14px rgba(240,165,0,0.5) !important;
-        }
+        .btn-logout:hover { transform: translateY(-1px); box-shadow: 0 4px 14px rgba(240,165,0,0.5) !important; }
 
         /* ── LAYOUT ── */
         .dashboard {
             display: grid;
-            grid-template-columns: 260px 1fr 300px;
-            gap: 20px;
-            padding: 24px 28px;
-            min-height: calc(100vh - 60px);
-            align-items: start;
+            grid-template-columns: 340px 1fr 380px;
+            gap: 20px; padding: 24px 28px;
+            min-height: calc(100vh - 60px); align-items: start;
         }
 
         /* ── CARD BASE ── */
         .card {
-            background: var(--panel);
-            border-radius: 16px;
-            overflow: hidden;
-            box-shadow: 0 4px 24px rgba(15,38,83,0.08);
-            border: 1px solid var(--border);
+            background: var(--panel); border-radius: 16px; overflow: hidden;
+            box-shadow: 0 4px 24px rgba(15,38,83,0.08); border: 1px solid var(--border);
             animation: fadeUp 0.5s ease both;
         }
 
@@ -203,150 +153,77 @@ $conn->close();
 
         .card-header {
             background: linear-gradient(135deg, var(--navy) 0%, var(--navy-light) 100%);
-            color: white;
-            padding: 13px 18px;
-            display: flex;
-            align-items: center;
-            gap: 9px;
-            font-size: 13px;
-            font-weight: 700;
-            letter-spacing: 0.5px;
-            text-transform: uppercase;
+            color: white; padding: 13px 18px;
+            display: flex; align-items: center; gap: 9px;
+            font-size: 13px; font-weight: 700; letter-spacing: 0.5px; text-transform: uppercase;
         }
 
         .card-header .hicon {
-            width: 28px;
-            height: 28px;
-            background: rgba(255,255,255,0.15);
-            border-radius: 8px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 14px;
+            width: 28px; height: 28px; background: rgba(255,255,255,0.15);
+            border-radius: 8px; display: flex; align-items: center;
+            justify-content: center; font-size: 14px;
         }
 
         /* ── STUDENT PANEL ── */
-        .student-body {
-            padding: 22px 18px;
-        }
+        .student-body { padding: 26px 24px; }
 
         .student-avatar-area {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            margin-bottom: 22px;
-            gap: 10px;
+            display: flex; align-items: center; gap: 18px;
+            margin-bottom: 24px; padding-bottom: 20px; border-bottom: 1px solid var(--border);
         }
 
         .avatar-initials {
-            width: 72px;
-            height: 72px;
-            border-radius: 50%;
+            width: 80px; height: 80px; border-radius: 50%;
             background: linear-gradient(135deg, var(--navy-light), var(--accent));
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-family: 'DM Serif Display', serif;
-            font-size: 28px;
-            color: white;
-            letter-spacing: 1px;
+            display: flex; align-items: center; justify-content: center;
+            font-family: 'DM Serif Display', serif; font-size: 30px;
+            color: white; letter-spacing: 1px;
             box-shadow: 0 6px 20px rgba(36,82,160,0.35);
-            border: 3px solid white;
-            outline: 2px solid var(--accent);
+            border: 3px solid white; outline: 2px solid var(--accent); flex-shrink: 0;
         }
 
-        .student-name-display {
-            text-align: center;
-        }
+        .student-name-display { text-align: left; }
 
-        .student-name-display .sname {
-            font-size: 15px;
-            font-weight: 700;
-            color: var(--navy);
-            line-height: 1.2;
-        }
+        .student-name-display .sname { font-size: 16px; font-weight: 700; color: var(--navy); line-height: 1.3; }
+        .student-name-display .sid   { font-size: 12px; color: var(--muted); margin-top: 2px; font-weight: 500; }
+        .student-name-display .scourse { font-size: 12px; color: var(--accent); margin-top: 4px; font-weight: 600; }
 
-        .student-name-display .scourse {
-            font-size: 12px;
-            color: var(--muted);
-            margin-top: 2px;
-        }
-
-        .info-rows {
-            display: flex;
-            flex-direction: column;
-            gap: 0;
-        }
+        .info-rows { display: flex; flex-direction: column; gap: 0; }
 
         .info-row {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            padding: 10px 0;
-            border-bottom: 1px solid #f0f3f9;
-            font-size: 12.5px;
+            display: flex; align-items: center; gap: 12px;
+            padding: 11px 0; border-bottom: 1px solid #f0f3f9;
         }
 
         .info-row:last-child { border-bottom: none; }
 
         .info-row .ri {
-            width: 30px;
-            height: 30px;
-            background: var(--tag-bg);
-            border-radius: 8px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 14px;
-            flex-shrink: 0;
+            width: 34px; height: 34px; background: var(--tag-bg); border-radius: 9px;
+            display: flex; align-items: center; justify-content: center; font-size: 15px; flex-shrink: 0;
         }
 
-        .info-row .rl {
-            color: var(--muted);
-            font-size: 11px;
-            font-weight: 600;
-            text-transform: uppercase;
-            letter-spacing: 0.4px;
-            line-height: 1;
-        }
+        .info-row .rl { color: var(--muted); font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.4px; line-height: 1; }
+        .info-row .rv { color: var(--text); font-weight: 500; font-size: 13px; line-height: 1.3; }
+        .info-row .rstack { display: flex; flex-direction: column; gap: 3px; }
 
-        .info-row .rv {
-            color: var(--text);
-            font-weight: 500;
-            font-size: 12.5px;
-            line-height: 1.3;
-        }
-
-        .info-row .rstack {
-            display: flex;
-            flex-direction: column;
-            gap: 2px;
-        }
-
+        /* ── SESSION BADGE ── */
         .session-badge {
-            display: inline-flex;
-            align-items: center;
-            gap: 6px;
+            display: flex; align-items: center; gap: 14px;
             background: linear-gradient(135deg, var(--navy), var(--accent));
-            color: white;
-            border-radius: 20px;
-            padding: 5px 14px;
-            font-size: 12px;
-            font-weight: 700;
-            margin-top: 16px;
-            width: 100%;
-            justify-content: center;
+            color: white; border-radius: 12px; padding: 14px 18px;
+            margin-top: 20px; width: 100%;
             box-shadow: 0 3px 10px rgba(36,82,160,0.3);
         }
 
+        .session-badge .session-icon { font-size: 26px; flex-shrink: 0; line-height: 1; }
+        .session-badge .session-info { display: flex; flex-direction: column; gap: 1px; }
+        .session-badge .session-num  { font-family: 'DM Serif Display', serif; font-size: 28px; line-height: 1; }
+        .session-badge .session-lbl  { font-size: 11px; font-weight: 600; opacity: 0.8; text-transform: uppercase; letter-spacing: 0.5px; }
+
         /* ── ANNOUNCEMENTS ── */
         .ann-body {
-            padding: 18px;
-            display: flex;
-            flex-direction: column;
-            gap: 14px;
-            max-height: 560px;
-            overflow-y: auto;
+            padding: 18px; display: flex; flex-direction: column;
+            gap: 14px; max-height: 560px; overflow-y: auto;
         }
 
         .ann-body::-webkit-scrollbar { width: 5px; }
@@ -354,163 +231,73 @@ $conn->close();
         .ann-body::-webkit-scrollbar-thumb { background: var(--border); border-radius: 10px; }
 
         .ann-item {
-            border-radius: 12px;
-            border: 1px solid var(--border);
-            overflow: hidden;
-            transition: box-shadow 0.2s, transform 0.2s;
+            border-radius: 12px; border: 1px solid var(--border);
+            overflow: hidden; transition: box-shadow 0.2s, transform 0.2s;
         }
 
-        .ann-item:hover {
-            box-shadow: 0 6px 20px rgba(15,38,83,0.1);
-            transform: translateY(-2px);
-        }
+        .ann-item:hover { box-shadow: 0 6px 20px rgba(15,38,83,0.1); transform: translateY(-2px); }
 
         .ann-item-header {
-            background: var(--tag-bg);
-            padding: 10px 14px;
-            display: flex;
-            align-items: center;
-            gap: 8px;
+            background: var(--tag-bg); padding: 10px 14px;
+            display: flex; align-items: center; gap: 8px;
         }
 
-        .ann-dot {
-            width: 8px;
-            height: 8px;
-            border-radius: 50%;
-            background: var(--gold);
-            flex-shrink: 0;
-        }
-
-        .ann-meta {
-            font-size: 12px;
-            font-weight: 700;
-            color: var(--navy);
-        }
-
-        .ann-date {
-            font-size: 11px;
-            color: var(--muted);
-            margin-left: auto;
-        }
-
-        .ann-body-text {
-            padding: 12px 14px;
-            font-size: 13px;
-            color: #445;
-            line-height: 1.6;
-        }
-
-        .ann-empty {
-            padding: 12px 14px;
-            font-size: 12px;
-            color: var(--muted);
-            font-style: italic;
-        }
+        .ann-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--gold); flex-shrink: 0; }
+        .ann-meta { font-size: 12px; font-weight: 700; color: var(--navy); }
+        .ann-date { font-size: 11px; color: var(--muted); margin-left: auto; }
+        .ann-body-text { padding: 12px 14px; font-size: 13px; color: #445; line-height: 1.6; }
+        .ann-empty     { padding: 12px 14px; font-size: 12px; color: var(--muted); font-style: italic; }
 
         /* ── RULES ── */
-        .rules-body {
-            padding: 20px 18px;
-            max-height: 600px;
-            overflow-y: auto;
-        }
+        .rules-body { padding: 24px 22px; max-height: 640px; overflow-y: auto; }
 
         .rules-body::-webkit-scrollbar { width: 5px; }
         .rules-body::-webkit-scrollbar-track { background: transparent; }
         .rules-body::-webkit-scrollbar-thumb { background: var(--border); border-radius: 10px; }
 
         .rules-university {
-            text-align: center;
-            margin-bottom: 16px;
-            padding-bottom: 14px;
-            border-bottom: 2px solid var(--tag-bg);
+            text-align: center; margin-bottom: 18px;
+            padding-bottom: 16px; border-bottom: 2px solid var(--tag-bg);
         }
 
-        .rules-university h3 {
-            font-family: 'DM Serif Display', serif;
-            font-size: 15px;
-            color: var(--navy);
-            margin-bottom: 2px;
-        }
-
-        .rules-university h4 {
-            font-size: 11px;
-            font-weight: 700;
-            color: var(--navy-light);
-            letter-spacing: 0.5px;
-            margin-bottom: 8px;
-        }
+        .rules-university h3 { font-family: 'DM Serif Display', serif; font-size: 17px; color: var(--navy); margin-bottom: 3px; }
+        .rules-university h4 { font-size: 11.5px; font-weight: 700; color: var(--navy-light); letter-spacing: 0.5px; margin-bottom: 10px; }
 
         .rules-badge {
             display: inline-block;
             background: linear-gradient(135deg, var(--navy), var(--accent));
-            color: white;
-            font-size: 10px;
-            font-weight: 700;
-            letter-spacing: 1px;
-            text-transform: uppercase;
-            padding: 4px 12px;
-            border-radius: 20px;
+            color: white; font-size: 10px; font-weight: 700;
+            letter-spacing: 1px; text-transform: uppercase; padding: 4px 14px; border-radius: 20px;
         }
 
         .rules-intro {
-            font-size: 12px;
-            color: var(--muted);
-            line-height: 1.6;
-            margin-bottom: 14px;
-            padding: 10px 12px;
-            background: var(--tag-bg);
-            border-radius: 8px;
-            border-left: 3px solid var(--accent);
+            font-size: 12.5px; color: var(--muted); line-height: 1.65;
+            margin-bottom: 16px; padding: 11px 14px;
+            background: var(--tag-bg); border-radius: 9px; border-left: 3px solid var(--accent);
         }
 
-        .rules-list {
-            display: flex;
-            flex-direction: column;
-            gap: 8px;
-        }
+        .rules-list { display: flex; flex-direction: column; gap: 9px; }
 
         .rule-item {
-            display: flex;
-            gap: 10px;
-            align-items: flex-start;
-            padding: 9px 12px;
-            border-radius: 9px;
-            background: #fafbfd;
-            border: 1px solid var(--border);
+            display: flex; gap: 12px; align-items: flex-start;
+            padding: 11px 14px; border-radius: 10px;
+            background: #fafbfd; border: 1px solid var(--border);
             transition: background 0.15s, border-color 0.15s;
         }
 
-        .rule-item:hover {
-            background: var(--tag-bg);
-            border-color: #b8c5e0;
-        }
+        .rule-item:hover { background: var(--tag-bg); border-color: #b8c5e0; }
 
         .rule-num {
-            min-width: 22px;
-            height: 22px;
+            min-width: 24px; height: 24px;
             background: linear-gradient(135deg, var(--navy-light), var(--accent));
-            color: white;
-            border-radius: 50%;
-            font-size: 10px;
-            font-weight: 700;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            flex-shrink: 0;
-            margin-top: 1px;
+            color: white; border-radius: 50%; font-size: 11px; font-weight: 700;
+            display: flex; align-items: center; justify-content: center; flex-shrink: 0; margin-top: 1px;
         }
 
-        .rule-text {
-            font-size: 11.5px;
-            line-height: 1.55;
-            color: #3a4a6b;
-        }
+        .rule-text { font-size: 12.5px; line-height: 1.6; color: #3a4a6b; }
 
         @media (max-width: 960px) {
-            .dashboard {
-                grid-template-columns: 1fr;
-                padding: 16px;
-            }
+            .dashboard { grid-template-columns: 1fr; padding: 16px; }
         }
     </style>
 </head>
@@ -544,15 +331,21 @@ $conn->close();
         </div>
         <div class="student-body">
             <?php
-                $name = $_SESSION['student_name'] ?? 'Student';
-                $parts = explode(' ', trim($name));
-                $initials = strtoupper(substr($parts[0], 0, 1) . (count($parts) > 1 ? substr($parts[count($parts)-1], 0, 1) : ''));
+                $name     = $_SESSION['student_name'] ?? 'Student';
+                $parts    = explode(' ', trim($name));
+                $initials = strtoupper(
+                    substr($parts[0], 0, 1) .
+                    (count($parts) > 1 ? substr($parts[count($parts)-1], 0, 1) : '')
+                );
             ?>
             <div class="student-avatar-area">
                 <div class="avatar-initials"><?= htmlspecialchars($initials) ?></div>
                 <div class="student-name-display">
                     <div class="sname"><?= htmlspecialchars($name) ?></div>
-                    <div class="scourse"><?= htmlspecialchars($_SESSION['course'] ?? 'BSIT') ?> — Year <?= htmlspecialchars($_SESSION['year_level'] ?? '4') ?></div>
+                    <div class="sid"><?= htmlspecialchars($_SESSION['student_id'] ?? '') ?></div>
+                    <div class="scourse">
+                        <?= htmlspecialchars($_SESSION['course'] ?? 'N/A') ?> &mdash; Year <?= htmlspecialchars($_SESSION['year_level'] ?? 'N/A') ?>
+                    </div>
                 </div>
             </div>
 
@@ -568,20 +361,24 @@ $conn->close();
                     <div class="ri">🎓</div>
                     <div class="rstack">
                         <span class="rl">Course</span>
-                        <span class="rv"><?= htmlspecialchars($_SESSION['course'] ?? 'BSIT') ?></span>
+                        <span class="rv"><?= htmlspecialchars($_SESSION['course'] ?? 'N/A') ?></span>
                     </div>
                 </div>
                 <div class="info-row">
                     <div class="ri">📅</div>
                     <div class="rstack">
                         <span class="rl">Year Level</span>
-                        <span class="rv">Year <?= htmlspecialchars($_SESSION['year_level'] ?? '4') ?></span>
+                        <span class="rv">Year <?= htmlspecialchars($_SESSION['year_level'] ?? 'N/A') ?></span>
                     </div>
                 </div>
             </div>
 
             <div class="session-badge">
-                💻 &nbsp;<?= htmlspecialchars($sessions_remaining) ?> Sessions Remaining
+                <div class="session-icon">💻</div>
+                <div class="session-info">
+                    <span class="session-num"><?= htmlspecialchars($sessions_remaining) ?></span>
+                    <span class="session-lbl">Sessions Remaining</span>
+                </div>
             </div>
         </div>
     </div>
@@ -593,20 +390,24 @@ $conn->close();
             Announcements
         </div>
         <div class="ann-body">
-            <?php foreach ($announcements as $ann): ?>
-            <div class="ann-item">
-                <div class="ann-item-header">
-                    <div class="ann-dot"></div>
-                    <span class="ann-meta"><?= htmlspecialchars($ann['admin']) ?></span>
-                    <span class="ann-date">📅 <?= htmlspecialchars($ann['date']) ?></span>
+            <?php if (empty($announcements)): ?>
+                <div class="ann-empty">No announcements yet.</div>
+            <?php else: ?>
+                <?php foreach ($announcements as $ann): ?>
+                <div class="ann-item">
+                    <div class="ann-item-header">
+                        <div class="ann-dot"></div>
+                        <span class="ann-meta"><?= htmlspecialchars($ann['admin']) ?></span>
+                        <span class="ann-date">📅 <?= htmlspecialchars($ann['date']) ?></span>
+                    </div>
+                    <?php if (!empty($ann['message'])): ?>
+                    <div class="ann-body-text"><?= htmlspecialchars($ann['message']) ?></div>
+                    <?php else: ?>
+                    <div class="ann-empty">No message content.</div>
+                    <?php endif; ?>
                 </div>
-                <?php if (!empty($ann['message'])): ?>
-                <div class="ann-body-text"><?= htmlspecialchars($ann['message']) ?></div>
-                <?php else: ?>
-                <div class="ann-empty">No message content.</div>
-                <?php endif; ?>
-            </div>
-            <?php endforeach; ?>
+                <?php endforeach; ?>
+            <?php endif; ?>
         </div>
     </div>
 
