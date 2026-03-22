@@ -57,14 +57,23 @@ if ($result->num_rows === 0) {
 $student = $result->fetch_assoc();
 $stmt->close();
 
-// ── Read remaining sessions directly from the DB (never from POST) ──
+// ── Read remaining sessions directly from the DB ──
 $current_sessions = isset($student['sessions']) ? (int)$student['sessions'] : 0;
 
-// Block sit-in if student has no sessions left
-if ($current_sessions < 1) {
-    $conn->close();
-    header('Location: admin_SitIn.php?error=no_sessions');
-    exit();
+// ── Determine new session count ──
+if ($current_sessions <= 0) {
+    // First time (or depleted): admin must have entered a session count
+    $admin_sessions = (int)($_POST['remaining_session'] ?? 0);
+    if ($admin_sessions < 1) {
+        $conn->close();
+        header('Location: admin_SitIn.php?error=missing_fields');
+        exit();
+    }
+    // Save the admin-set value to student, then deduct 1 for this sit-in
+    $new_sessions = $admin_sessions - 1;
+} else {
+    // Returning student: just deduct 1 from existing count
+    $new_sessions = $current_sessions - 1;
 }
 
 // ── Check if student already has an active sit-in ──
@@ -81,9 +90,7 @@ if ($active_check->num_rows > 0) {
 }
 $stmt->close();
 
-// ── Deduct 1 session from the student table ──
-$new_sessions = $current_sessions - 1;
-
+// ── Save updated session count to the student table ──
 if ($session_col) {
     $stmt = $conn->prepare("UPDATE student SET `$session_col` = ? WHERE IdNumber = ?");
     $stmt->bind_param('is', $new_sessions, $student_id);

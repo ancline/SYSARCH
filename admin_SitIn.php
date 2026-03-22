@@ -590,6 +590,15 @@ $conn->close();
             font-weight: 700;
         }
 
+        /* Sessions hint text shown below the field */
+        .sessions-hint {
+            font-size: 11.5px;
+            margin: -8px 0 10px 0;
+            padding: 0 4px;
+        }
+        .sessions-hint.hint-new    { color: var(--accent); }
+        .sessions-hint.hint-exists { color: var(--muted); }
+
         .modal-footer {
             padding: 16px 24px 20px;
             display: flex;
@@ -784,12 +793,13 @@ $conn->close();
                         </select>
                     </div>
 
-                    <!-- READ-ONLY: auto-filled from DB via AJAX, not editable by admin -->
+                    <!-- Editable if student has no sessions yet; read-only if they already have some -->
                     <div class="modal-field">
                         <label>Remaining Session:</label>
                         <input type="number" name="remaining_session" id="modal_sessions"
-                               placeholder="Auto-filled" readonly>
+                               placeholder="Enter sessions" min="1" max="999">
                     </div>
+                    <p class="sessions-hint" id="sessions_hint"></p>
 
                 </div>
                 <div class="modal-footer">
@@ -980,11 +990,15 @@ $conn->close();
 
     function closeSitInModal() {
         document.getElementById('sitInModal').classList.remove('open');
-        document.getElementById('modal_id').value      = '';
-        document.getElementById('modal_name').value    = '';
-        document.getElementById('modal_sessions').value = '';
-        document.getElementById('modal_sessions').classList.remove('sessions-zero');
-        document.getElementById('btnSitIn').disabled   = false;
+        document.getElementById('modal_id').value       = '';
+        document.getElementById('modal_name').value     = '';
+        const si = document.getElementById('modal_sessions');
+        si.value    = '';
+        si.readOnly = false;
+        si.classList.remove('sessions-zero');
+        document.getElementById('sessions_hint').textContent = '';
+        document.getElementById('sessions_hint').className   = 'sessions-hint';
+        document.getElementById('btnSitIn').disabled = false;
     }
 
     // Close modal when clicking backdrop
@@ -998,18 +1012,23 @@ $conn->close();
     });
 
     // ── AUTO-FILL student name & sessions from ID number via AJAX ──
-    // The Remaining Session field is READ-ONLY — value comes from the DB only.
+    // If sessions = 0 or NULL → admin must enter the session count (editable).
+    // If sessions > 0 → field is read-only; process_sitin.php will deduct 1.
     let lookupTimeout;
     function lookupStudent(id) {
         clearTimeout(lookupTimeout);
         const sessionsInput = document.getElementById('modal_sessions');
+        const hint          = document.getElementById('sessions_hint');
         const submitBtn     = document.getElementById('btnSitIn');
 
         if (id.length < 3) {
             document.getElementById('modal_name').value = '';
-            sessionsInput.value = '';
+            sessionsInput.value    = '';
+            sessionsInput.readOnly = false;
             sessionsInput.classList.remove('sessions-zero');
-            submitBtn.disabled  = false;
+            hint.textContent = '';
+            hint.className   = 'sessions-hint';
+            submitBtn.disabled = false;
             return;
         }
 
@@ -1021,23 +1040,33 @@ $conn->close();
                         document.getElementById('modal_name').value = data.name;
 
                         const sessions = parseInt(data.sessions) || 0;
-                        sessionsInput.value = sessions;
 
                         if (sessions <= 0) {
-                            // Highlight red and disable Sit In button
-                            sessionsInput.classList.add('sessions-zero');
-                            submitBtn.disabled = true;
-                            submitBtn.title    = 'Student has no remaining sessions.';
-                        } else {
+                            // ── First time or depleted: admin sets the session count ──
+                            sessionsInput.value    = '';
+                            sessionsInput.readOnly = false;
                             sessionsInput.classList.remove('sessions-zero');
+                            sessionsInput.placeholder = 'Enter no. of sessions';
+                            hint.textContent = '⚠️ No sessions set yet — enter the number of sessions to assign.';
+                            hint.className   = 'sessions-hint hint-new';
                             submitBtn.disabled = false;
-                            submitBtn.title    = '';
+                        } else {
+                            // ── Returning student: show remaining, lock field ──
+                            sessionsInput.value    = sessions;
+                            sessionsInput.readOnly = true;
+                            sessionsInput.classList.remove('sessions-zero');
+                            hint.textContent = '✅ 1 session will be deducted on Sit In.';
+                            hint.className   = 'sessions-hint hint-exists';
+                            submitBtn.disabled = false;
                         }
                     } else {
                         document.getElementById('modal_name').value = '';
-                        sessionsInput.value = '';
+                        sessionsInput.value    = '';
+                        sessionsInput.readOnly = false;
                         sessionsInput.classList.remove('sessions-zero');
-                        submitBtn.disabled  = false;
+                        hint.textContent = '';
+                        hint.className   = 'sessions-hint';
+                        submitBtn.disabled = false;
                     }
                 })
                 .catch(() => {});
