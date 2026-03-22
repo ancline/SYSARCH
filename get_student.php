@@ -1,19 +1,6 @@
 <?php
-session_start();
-
-if (!isset($_SESSION['admin_id'])) {
-    http_response_code(403);
-    echo json_encode(['found' => false]);
-    exit();
-}
-
-header('Content-Type: application/json');
-
-$id = trim($_GET['id'] ?? '');
-if (empty($id)) {
-    echo json_encode(['found' => false]);
-    exit();
-}
+// get_student.php — AJAX endpoint
+// Returns student name and remaining sessions from the student table.
 
 $host = 'localhost';
 $db   = 'students';
@@ -26,7 +13,13 @@ if ($conn->connect_error) {
     exit();
 }
 
-// Auto-detect the sessions column name from the student table
+$id = trim($_GET['id'] ?? '');
+if (!$id) {
+    echo json_encode(['found' => false]);
+    exit();
+}
+
+// ── Detect session column name in the student table ──
 $session_col = null;
 $cols = $conn->query("SHOW COLUMNS FROM student");
 while ($col = $cols->fetch_assoc()) {
@@ -37,27 +30,23 @@ while ($col = $cols->fetch_assoc()) {
 }
 
 $select = $session_col
-    ? "FirstName, LastName, `$session_col` AS sessions"
-    : "FirstName, LastName";
+    ? "IdNumber, FirstName, LastName, `$session_col` AS sessions"
+    : "IdNumber, FirstName, LastName";
 
 $stmt = $conn->prepare("SELECT $select FROM student WHERE IdNumber = ?");
 $stmt->bind_param('s', $id);
 $stmt->execute();
-$result = $stmt->get_result();
+$row = $stmt->get_result()->fetch_assoc();
+$stmt->close();
+$conn->close();
 
-if ($result->num_rows === 1) {
-    $row      = $result->fetch_assoc();
-    $sessions = isset($row['sessions']) ? (int)$row['sessions'] : 0;
-
+if ($row) {
     echo json_encode([
         'found'    => true,
         'name'     => trim($row['FirstName'] . ' ' . $row['LastName']),
-        'sessions' => $sessions,
-        'can_sitin' => $sessions > 0,
+        // Always return integer so JS can compare against 0
+        'sessions' => isset($row['sessions']) ? (int)$row['sessions'] : 0,
     ]);
 } else {
     echo json_encode(['found' => false]);
 }
-
-$stmt->close();
-$conn->close();

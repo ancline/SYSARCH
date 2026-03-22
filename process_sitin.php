@@ -16,7 +16,7 @@ if ($conn->connect_error) {
     die("Connection failed: " . $conn->connect_error);
 }
 
-// Validate required fields
+// Validate required fields (we do NOT trust $_POST['remaining_session'] — always read from DB)
 $student_id   = trim($_POST['student_id']   ?? '');
 $student_name = trim($_POST['student_name'] ?? '');
 $purpose      = trim($_POST['purpose']      ?? '');
@@ -27,9 +27,9 @@ if (empty($student_id) || empty($purpose) || empty($lab)) {
     exit();
 }
 
-// Detect the sessions column name in the student table
-$session_col = null;
-$cols_result = $conn->query("SHOW COLUMNS FROM student");
+// ── Detect the sessions column name in the student table ──
+$session_col  = null;
+$cols_result  = $conn->query("SHOW COLUMNS FROM student");
 while ($col = $cols_result->fetch_assoc()) {
     if (preg_match('/^(sessions?|no_?of_?sessions?|remaining_?sessions?|session_?count)$/i', $col['Field'])) {
         $session_col = $col['Field'];
@@ -41,7 +41,7 @@ $select_cols = $session_col
     ? "IdNumber, FirstName, LastName, `$session_col` AS sessions"
     : "IdNumber, FirstName, LastName";
 
-// Verify student exists
+// ── Verify student exists ──
 $stmt = $conn->prepare("SELECT $select_cols FROM student WHERE IdNumber = ?");
 $stmt->bind_param('s', $student_id);
 $stmt->execute();
@@ -57,7 +57,7 @@ if ($result->num_rows === 0) {
 $student = $result->fetch_assoc();
 $stmt->close();
 
-// Get current sessions remaining from student table
+// ── Read remaining sessions directly from the DB (never from POST) ──
 $current_sessions = isset($student['sessions']) ? (int)$student['sessions'] : 0;
 
 // Block sit-in if student has no sessions left
@@ -67,13 +67,13 @@ if ($current_sessions < 1) {
     exit();
 }
 
-// Check if student already has an active sit-in
+// ── Check if student already has an active sit-in ──
 $stmt = $conn->prepare("SELECT id FROM sitin WHERE student_id = ? AND time_out IS NULL");
 $stmt->bind_param('s', $student_id);
 $stmt->execute();
-$active = $stmt->get_result();
+$active_check = $stmt->get_result();
 
-if ($active->num_rows > 0) {
+if ($active_check->num_rows > 0) {
     $stmt->close();
     $conn->close();
     header('Location: admin_SitIn.php?error=already_sitin');
@@ -81,7 +81,7 @@ if ($active->num_rows > 0) {
 }
 $stmt->close();
 
-// Deduct 1 session from student table
+// ── Deduct 1 session from the student table ──
 $new_sessions = $current_sessions - 1;
 
 if ($session_col) {
@@ -91,7 +91,7 @@ if ($session_col) {
     $stmt->close();
 }
 
-// Make sure sitin table exists with sessions column
+// ── Ensure sitin table exists with sessions column ──
 $conn->query("
     CREATE TABLE IF NOT EXISTS sitin (
         id           INT AUTO_INCREMENT PRIMARY KEY,
@@ -106,9 +106,14 @@ $conn->query("
 ");
 $conn->query("ALTER TABLE sitin ADD COLUMN IF NOT EXISTS sessions INT DEFAULT NULL");
 
-// Insert sit-in record — store the REMAINING sessions AFTER deduction
+// ── Insert sit-in record ──
+// Store new_sessions (AFTER deduction) so the sitin record reflects what remains
 $full_name = trim($student['FirstName'] . ' ' . $student['LastName']);
-$stmt = $conn->prepare("INSERT INTO sitin (student_id, student_name, lab, purpose, sessions, time_in) VALUES (?, ?, ?, ?, ?, NOW())");
+
+$stmt = $conn->prepare("
+    INSERT INTO sitin (student_id, student_name, lab, purpose, sessions, time_in)
+    VALUES (?, ?, ?, ?, ?, NOW())
+");
 $stmt->bind_param('ssssi', $student_id, $full_name, $lab, $purpose, $new_sessions);
 
 if (!$stmt->execute()) {
@@ -117,6 +122,7 @@ if (!$stmt->execute()) {
     header('Location: admin_SitIn.php?error=insert_failed');
     exit();
 }
+
 $stmt->close();
 $conn->close();
 

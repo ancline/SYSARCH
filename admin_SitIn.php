@@ -584,6 +584,12 @@ $conn->close();
             cursor: not-allowed;
         }
 
+        /* Sessions field: highlight red if 0 */
+        .modal-field input.sessions-zero {
+            color: #c0392b;
+            font-weight: 700;
+        }
+
         .modal-footer {
             padding: 16px 24px 20px;
             display: flex;
@@ -625,6 +631,12 @@ $conn->close();
             box-shadow: 0 5px 16px rgba(15,38,83,0.32);
         }
 
+        .btn-modal-submit:disabled {
+            opacity: 0.45;
+            cursor: not-allowed;
+            transform: none;
+        }
+
         .btn-sitin {
             display: inline-flex;
             align-items: center;
@@ -646,9 +658,50 @@ $conn->close();
             transform: translateY(-1px);
             box-shadow: 0 4px 14px rgba(15,38,83,0.32);
         }
+
+        /* ── ERROR / SUCCESS TOAST ── */
+        .toast {
+            position: fixed;
+            top: 72px;
+            right: 24px;
+            padding: 12px 20px;
+            border-radius: 10px;
+            font-size: 13px;
+            font-weight: 600;
+            color: white;
+            z-index: 9999;
+            box-shadow: 0 4px 16px rgba(0,0,0,0.2);
+            animation: toastIn 0.3s ease both;
+        }
+
+        .toast-error   { background: #c0392b; }
+        .toast-success { background: #1a7a4a; }
+
+        @keyframes toastIn {
+            from { opacity: 0; transform: translateX(20px); }
+            to   { opacity: 1; transform: translateX(0); }
+        }
     </style>
 </head>
 <body>
+
+<!-- TOAST NOTIFICATIONS -->
+<?php if (isset($_GET['error'])): ?>
+<div class="toast toast-error" id="toast">
+    <?php
+    $errors = [
+        'missing_fields'   => '⚠️ Please fill in all required fields.',
+        'student_not_found'=> '❌ Student ID not found.',
+        'no_sessions'      => '🚫 Student has no remaining sessions.',
+        'already_sitin'    => '⚠️ Student already has an active sit-in session.',
+        'insert_failed'    => '❌ Failed to record sit-in. Please try again.',
+    ];
+    echo htmlspecialchars($errors[$_GET['error']] ?? 'An error occurred.');
+    ?>
+</div>
+<?php elseif (isset($_GET['success'])): ?>
+<div class="toast toast-success" id="toast">✅ Sit-in recorded successfully!</div>
+<?php endif; ?>
 
 <!-- NAVBAR -->
 <div class="navbar">
@@ -692,7 +745,8 @@ $conn->close();
 
                     <div class="modal-field">
                         <label>ID Number:</label>
-                        <input type="text" name="student_id" id="modal_id" placeholder="e.g. 3677937"
+                        <input type="text" name="student_id" id="modal_id"
+                               placeholder="e.g. 3677937"
                                oninput="lookupStudent(this.value)" required>
                     </div>
 
@@ -730,16 +784,17 @@ $conn->close();
                         </select>
                     </div>
 
+                    <!-- READ-ONLY: auto-filled from DB via AJAX, not editable by admin -->
                     <div class="modal-field">
                         <label>Remaining Session:</label>
                         <input type="number" name="remaining_session" id="modal_sessions"
-                               placeholder="e.g. 30" min="1" max="999" required>
+                               placeholder="Auto-filled" readonly>
                     </div>
 
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn-modal-close" onclick="closeSitInModal()">Close</button>
-                    <button type="submit" class="btn-modal-submit">Sit In</button>
+                    <button type="submit" class="btn-modal-submit" id="btnSitIn">Sit In</button>
                 </div>
             </form>
         </div>
@@ -913,6 +968,10 @@ $conn->close();
         }
     }
 
+    // ── TOAST AUTO-DISMISS ──
+    const toast = document.getElementById('toast');
+    if (toast) setTimeout(() => toast.style.display = 'none', 4000);
+
     // ── MODAL ──
     function openSitInModal() {
         document.getElementById('sitInModal').classList.add('open');
@@ -921,9 +980,11 @@ $conn->close();
 
     function closeSitInModal() {
         document.getElementById('sitInModal').classList.remove('open');
-        document.getElementById('modal_id').value = '';
-        document.getElementById('modal_name').value = '';
+        document.getElementById('modal_id').value      = '';
+        document.getElementById('modal_name').value    = '';
         document.getElementById('modal_sessions').value = '';
+        document.getElementById('modal_sessions').classList.remove('sessions-zero');
+        document.getElementById('btnSitIn').disabled   = false;
     }
 
     // Close modal when clicking backdrop
@@ -936,28 +997,47 @@ $conn->close();
         if (e.key === 'Escape') closeSitInModal();
     });
 
-    // Auto-fill student name & sessions from ID number via AJAX
+    // ── AUTO-FILL student name & sessions from ID number via AJAX ──
+    // The Remaining Session field is READ-ONLY — value comes from the DB only.
     let lookupTimeout;
     function lookupStudent(id) {
         clearTimeout(lookupTimeout);
+        const sessionsInput = document.getElementById('modal_sessions');
+        const submitBtn     = document.getElementById('btnSitIn');
+
         if (id.length < 3) {
             document.getElementById('modal_name').value = '';
-            document.getElementById('modal_sessions').value = '';
+            sessionsInput.value = '';
+            sessionsInput.classList.remove('sessions-zero');
+            submitBtn.disabled  = false;
             return;
         }
+
         lookupTimeout = setTimeout(() => {
             fetch('get_student.php?id=' + encodeURIComponent(id))
                 .then(r => r.json())
                 .then(data => {
                     if (data.found) {
                         document.getElementById('modal_name').value = data.name;
-                        // Pre-fill sessions from DB but allow admin to override
-                        if (data.sessions !== '—' && data.sessions !== '') {
-                            document.getElementById('modal_sessions').value = data.sessions;
+
+                        const sessions = parseInt(data.sessions) || 0;
+                        sessionsInput.value = sessions;
+
+                        if (sessions <= 0) {
+                            // Highlight red and disable Sit In button
+                            sessionsInput.classList.add('sessions-zero');
+                            submitBtn.disabled = true;
+                            submitBtn.title    = 'Student has no remaining sessions.';
+                        } else {
+                            sessionsInput.classList.remove('sessions-zero');
+                            submitBtn.disabled = false;
+                            submitBtn.title    = '';
                         }
                     } else {
                         document.getElementById('modal_name').value = '';
-                        document.getElementById('modal_sessions').value = '';
+                        sessionsInput.value = '';
+                        sessionsInput.classList.remove('sessions-zero');
+                        submitBtn.disabled  = false;
                     }
                 })
                 .catch(() => {});
