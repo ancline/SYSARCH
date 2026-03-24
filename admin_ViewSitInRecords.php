@@ -16,8 +16,6 @@ if ($conn->connect_error) {
     die("Connection failed: " . $conn->connect_error);
 }
 
-// sessions are stored directly in the sitin table
-
 // Make sure sitin table exists
 $conn->query("
     CREATE TABLE IF NOT EXISTS sitin (
@@ -31,15 +29,16 @@ $conn->query("
     )
 ");
 
-// Fetch all sit-in records joined with student for session count
 // Add sessions column to sitin if missing (migration safety)
 $conn->query("ALTER TABLE sitin ADD COLUMN IF NOT EXISTS sessions INT DEFAULT NULL");
 
+// JOIN student table to get live session count
 $result = $conn->query("
-    SELECT id, student_id, student_name, purpose, lab,
-           sessions, time_in, time_out
-    FROM sitin
-    ORDER BY id DESC
+    SELECT s.id, s.student_id, s.student_name, s.purpose, s.lab,
+           st.sessions, s.time_in, s.time_out
+    FROM sitin s
+    LEFT JOIN student st ON st.IdNumber = s.student_id
+    ORDER BY s.id DESC
 ");
 
 $records = [];
@@ -334,6 +333,31 @@ $conn->close();
             color: var(--navy-light);
         }
 
+        /* ── TIME CELLS ── */
+        .time-cell {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+        }
+
+        .time-date {
+            font-size: 11px;
+            color: var(--muted);
+            font-weight: 500;
+        }
+
+        .time-clock {
+            font-size: 12.5px;
+            font-weight: 700;
+            color: var(--navy);
+        }
+
+        .time-none {
+            font-size: 12px;
+            color: var(--muted);
+            font-style: italic;
+        }
+
         .status-badge {
             display: inline-flex;
             align-items: center;
@@ -484,14 +508,16 @@ $conn->close();
                         <th onclick="sortTable(3)">Purpose</th>
                         <th onclick="sortTable(4)">Sit Lab</th>
                         <th onclick="sortTable(5)">Session</th>
-                        <th onclick="sortTable(6)">Status</th>
+                        <th onclick="sortTable(6)">Time In</th>
+                        <th onclick="sortTable(7)">Time Out</th>
+                        <th onclick="sortTable(8)">Status</th>
                         <th>Actions</th>
                     </tr>
                 </thead>
                 <tbody id="tableBody">
                     <?php if (empty($records)): ?>
                     <tr class="empty-row">
-                        <td colspan="8">No data available</td>
+                        <td colspan="10">No data available</td>
                     </tr>
                     <?php else: ?>
                     <?php foreach ($records as $r):
@@ -504,10 +530,30 @@ $conn->close();
                         <td><?= htmlspecialchars($r['purpose'] ?? '—') ?></td>
                         <td><?= htmlspecialchars($r['lab'] ?? '—') ?></td>
                         <td>
-                            <?php if (!empty($r['sessions'])): ?>
+                            <?php if (!is_null($r['sessions'])): ?>
                                 <span class="session-pill">💻 <?= htmlspecialchars($r['sessions']) ?></span>
                             <?php else: ?>
                                 <span style="color:var(--muted);font-size:12px;">—</span>
+                            <?php endif; ?>
+                        </td>
+                        <td>
+                            <?php if (!empty($r['time_in'])): ?>
+                                <div class="time-cell">
+                                    <span class="time-date"><?= date('M d, Y', strtotime($r['time_in'])) ?></span>
+                                    <span class="time-clock">🕐 <?= date('h:i A', strtotime($r['time_in'])) ?></span>
+                                </div>
+                            <?php else: ?>
+                                <span class="time-none">—</span>
+                            <?php endif; ?>
+                        </td>
+                        <td>
+                            <?php if (!empty($r['time_out'])): ?>
+                                <div class="time-cell">
+                                    <span class="time-date"><?= date('M d, Y', strtotime($r['time_out'])) ?></span>
+                                    <span class="time-clock">🕐 <?= date('h:i A', strtotime($r['time_out'])) ?></span>
+                                </div>
+                            <?php else: ?>
+                                <span class="time-none">Still active</span>
                             <?php endif; ?>
                         </td>
                         <td>
@@ -616,7 +662,6 @@ $conn->close();
 
         allRows.forEach(r => tbody.appendChild(r));
 
-        // Re-apply filter after sort
         const q = document.getElementById('searchInput').value.toLowerCase();
         filtered = allRows.filter(row => row.innerText.toLowerCase().includes(q));
         currentPage = 1;

@@ -19,27 +19,26 @@ if ($conn->connect_error) {
 // Create the sitin table if it doesn't exist yet
 $conn->query("
     CREATE TABLE IF NOT EXISTS sitin (
-        id          INT AUTO_INCREMENT PRIMARY KEY,
-        student_id  VARCHAR(50)  NOT NULL,
+        id           INT AUTO_INCREMENT PRIMARY KEY,
+        student_id   VARCHAR(50)  NOT NULL,
         student_name VARCHAR(150) NOT NULL,
-        lab         VARCHAR(100) NOT NULL,
-        purpose     VARCHAR(255) DEFAULT '',
-        time_in     DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        time_out    DATETIME     DEFAULT NULL
+        lab          VARCHAR(100) NOT NULL,
+        purpose      VARCHAR(255) DEFAULT '',
+        time_in      DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        time_out     DATETIME     DEFAULT NULL,
+        sessions     INT          DEFAULT NULL
     )
 ");
 
-// Add sessions column if missing (migration safety)
-$conn->query("ALTER TABLE sitin ADD COLUMN IF NOT EXISTS sessions INT DEFAULT NULL");
-
-// Fetch all sit-ins
-$result = $conn->query("SELECT * FROM sitin ORDER BY time_in DESC");
+// ── ONLY fetch ACTIVE sit-ins (time_out IS NULL) ──
+$result = $conn->query("SELECT * FROM sitin WHERE time_out IS NULL ORDER BY time_in DESC");
 $sitins = [];
 if ($result) {
     while ($row = $result->fetch_assoc()) {
         $sitins[] = $row;
     }
 }
+
 $conn->close();
 ?>
 <!DOCTYPE html>
@@ -89,37 +88,11 @@ $conn->close();
             box-shadow: 0 4px 20px rgba(15,38,83,0.35);
         }
 
-        .nav-left {
-            display: flex;
-            align-items: center;
-            gap: 12px;
-        }
-
-        .nav-left img {
-            height: 38px;
-            filter: drop-shadow(0 2px 4px rgba(0,0,0,0.3));
-        }
-
-        .nav-title {
-            font-size: 13.5px;
-            font-weight: 600;
-            color: rgba(255,255,255,0.92);
-            letter-spacing: 0.3px;
-            line-height: 1.3;
-        }
-
-        .nav-divider {
-            width: 1px;
-            height: 28px;
-            background: rgba(255,255,255,0.2);
-            margin: 0 6px;
-        }
-
-        .nav-links {
-            display: flex;
-            align-items: center;
-            gap: 2px;
-        }
+        .nav-left { display: flex; align-items: center; gap: 12px; }
+        .nav-left img { height: 38px; filter: drop-shadow(0 2px 4px rgba(0,0,0,0.3)); }
+        .nav-title { font-size: 13.5px; font-weight: 600; color: rgba(255,255,255,0.92); letter-spacing: 0.3px; line-height: 1.3; }
+        .nav-divider { width: 1px; height: 28px; background: rgba(255,255,255,0.2); margin: 0 6px; }
+        .nav-links { display: flex; align-items: center; gap: 2px; }
 
         .nav-links a {
             color: rgba(255,255,255,0.85);
@@ -133,16 +106,8 @@ $conn->close();
             white-space: nowrap;
         }
 
-        .nav-links a:hover {
-            background: rgba(255,255,255,0.12);
-            color: white;
-        }
-
-        .nav-links a.active {
-            background: rgba(255,255,255,0.18);
-            color: white;
-            font-weight: 700;
-        }
+        .nav-links a:hover { background: rgba(255,255,255,0.12); color: white; }
+        .nav-links a.active { background: rgba(255,255,255,0.18); color: white; font-weight: 700; }
 
         .btn-logout {
             background: linear-gradient(135deg, var(--gold), var(--gold-light)) !important;
@@ -155,16 +120,10 @@ $conn->close();
             transition: transform 0.15s, box-shadow 0.15s !important;
         }
 
-        .btn-logout:hover {
-            transform: translateY(-1px);
-            box-shadow: 0 4px 14px rgba(240,165,0,0.5) !important;
-        }
+        .btn-logout:hover { transform: translateY(-1px); box-shadow: 0 4px 14px rgba(240,165,0,0.5) !important; }
 
         /* ── PAGE ── */
-        .page-wrapper {
-            padding: 28px 32px 48px;
-            animation: fadeUp 0.45s ease both;
-        }
+        .page-wrapper { padding: 28px 32px 48px; animation: fadeUp 0.45s ease both; }
 
         @keyframes fadeUp {
             from { opacity: 0; transform: translateY(16px); }
@@ -180,25 +139,11 @@ $conn->close();
             gap: 12px;
         }
 
-        .page-header-left h2 {
-            font-family: 'DM Serif Display', serif;
-            font-size: 22px;
-            color: var(--navy);
-            margin-bottom: 2px;
-        }
-
-        .page-header-left p {
-            font-size: 12.5px;
-            color: var(--muted);
-        }
+        .page-header-left h2 { font-family: 'DM Serif Display', serif; font-size: 22px; color: var(--navy); margin-bottom: 2px; }
+        .page-header-left p { font-size: 12.5px; color: var(--muted); }
 
         /* ── STAT STRIP ── */
-        .stat-strip {
-            display: flex;
-            gap: 16px;
-            margin-bottom: 22px;
-            flex-wrap: wrap;
-        }
+        .stat-strip { display: flex; gap: 16px; margin-bottom: 22px; flex-wrap: wrap; }
 
         .stat-pill {
             background: var(--panel);
@@ -214,41 +159,18 @@ $conn->close();
         }
 
         .stat-pill .sp-icon {
-            width: 40px;
-            height: 40px;
+            width: 40px; height: 40px;
             border-radius: 10px;
             background: linear-gradient(135deg, var(--navy), var(--navy-light));
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 18px;
-            flex-shrink: 0;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 18px; flex-shrink: 0;
         }
 
-        .stat-pill .sp-value {
-            font-size: 22px;
-            font-weight: 700;
-            color: var(--navy);
-            line-height: 1;
-        }
-
-        .stat-pill .sp-label {
-            font-size: 11.5px;
-            color: var(--muted);
-            font-weight: 500;
-            margin-top: 3px;
-            text-transform: uppercase;
-            letter-spacing: 0.3px;
-        }
+        .stat-pill .sp-value { font-size: 22px; font-weight: 700; color: var(--navy); line-height: 1; }
+        .stat-pill .sp-label { font-size: 11.5px; color: var(--muted); font-weight: 500; margin-top: 3px; text-transform: uppercase; letter-spacing: 0.3px; }
 
         /* ── CARD ── */
-        .card {
-            background: var(--panel);
-            border-radius: 16px;
-            overflow: hidden;
-            box-shadow: 0 4px 24px rgba(15,38,83,0.08);
-            border: 1px solid var(--border);
-        }
+        .card { background: var(--panel); border-radius: 16px; overflow: hidden; box-shadow: 0 4px 24px rgba(15,38,83,0.08); border: 1px solid var(--border); }
 
         .card-header {
             background: linear-gradient(135deg, var(--navy) 0%, var(--navy-light) 100%);
@@ -264,14 +186,30 @@ $conn->close();
         }
 
         .card-header .hicon {
-            width: 28px;
-            height: 28px;
+            width: 28px; height: 28px;
             background: rgba(255,255,255,0.15);
             border-radius: 8px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
+            display: flex; align-items: center; justify-content: center;
             font-size: 14px;
+        }
+
+        /* live badge in header */
+        .live-badge {
+            margin-left: auto;
+            background: #22c55e;
+            color: white;
+            font-size: 10px;
+            font-weight: 700;
+            padding: 3px 10px;
+            border-radius: 20px;
+            letter-spacing: 0.5px;
+            text-transform: uppercase;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50%       { opacity: 0.6; }
         }
 
         /* ── TABLE CONTROLS ── */
@@ -285,13 +223,7 @@ $conn->close();
             flex-wrap: wrap;
         }
 
-        .entries-label {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            font-size: 13px;
-            color: var(--muted);
-        }
+        .entries-label { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); }
 
         .entries-label select {
             padding: 5px 10px;
@@ -305,13 +237,7 @@ $conn->close();
             cursor: pointer;
         }
 
-        .search-wrap {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            font-size: 13px;
-            color: var(--muted);
-        }
+        .search-wrap { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); }
 
         .search-wrap input {
             padding: 6px 12px;
@@ -326,20 +252,12 @@ $conn->close();
             width: 200px;
         }
 
-        .search-wrap input:focus {
-            border-color: var(--accent);
-            box-shadow: 0 0 0 3px rgba(59,111,212,0.1);
-            background: white;
-        }
+        .search-wrap input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(59,111,212,0.1); background: white; }
 
         /* ── TABLE ── */
         .table-wrap { overflow-x: auto; }
 
-        table {
-            width: 100%;
-            border-collapse: collapse;
-            font-size: 13px;
-        }
+        table { width: 100%; border-collapse: collapse; font-size: 13px; }
 
         thead th {
             background: var(--tag-bg);
@@ -357,46 +275,23 @@ $conn->close();
         }
 
         thead th:hover { color: var(--navy); }
-
-        tbody tr {
-            border-bottom: 1px solid #f0f3f9;
-            transition: background 0.13s;
-        }
-
+        tbody tr { border-bottom: 1px solid #f0f3f9; transition: background 0.13s; }
         tbody tr:last-child { border-bottom: none; }
         tbody tr:hover { background: var(--tag-bg); }
+        tbody td { padding: 11px 20px; color: var(--text); vertical-align: middle; }
 
-        tbody td {
-            padding: 11px 20px;
-            color: var(--text);
-            vertical-align: middle;
-        }
+        .id-cell { font-family: monospace; font-size: 12.5px; font-weight: 600; color: var(--navy-light); }
 
-        .id-cell {
-            font-family: monospace;
-            font-size: 12.5px;
-            font-weight: 600;
-            color: var(--navy-light);
-        }
-
-        .status-badge {
+        .status-active {
             display: inline-flex;
             align-items: center;
             gap: 5px;
+            background: #e6f9f0;
+            color: #1a7a4a;
             padding: 4px 11px;
             border-radius: 20px;
             font-size: 11.5px;
             font-weight: 700;
-        }
-
-        .status-active {
-            background: #e6f9f0;
-            color: #1a7a4a;
-        }
-
-        .status-done {
-            background: var(--tag-bg);
-            color: var(--muted);
         }
 
         .btn-timeout {
@@ -442,30 +337,68 @@ $conn->close();
             transition: background 0.15s, border-color 0.15s;
         }
 
-        .page-btn:hover {
-            background: var(--tag-bg);
-            border-color: var(--accent);
+        .page-btn:hover { background: var(--tag-bg); border-color: var(--accent); }
+        .page-btn.active { background: linear-gradient(135deg, var(--navy), var(--navy-light)); color: white; border-color: transparent; box-shadow: 0 2px 8px rgba(15,38,83,0.22); }
+
+        /* ── EMPTY STATE ── */
+        .empty-state {
+            text-align: center;
+            padding: 56px 20px;
+            color: var(--muted);
         }
 
-        .page-btn.active {
+        .empty-state .es-icon { font-size: 48px; margin-bottom: 14px; }
+
+        .empty-state h4 {
+            font-family: 'DM Serif Display', serif;
+            font-size: 20px;
+            color: var(--navy);
+            margin-bottom: 6px;
+        }
+
+        .empty-state p { font-size: 13px; }
+
+        /* ── TOAST ── */
+        .toast {
+            position: fixed;
+            top: 72px; right: 24px;
+            padding: 12px 20px;
+            border-radius: 10px;
+            font-size: 13px;
+            font-weight: 600;
+            color: white;
+            z-index: 9999;
+            box-shadow: 0 4px 16px rgba(0,0,0,0.2);
+            animation: toastIn 0.3s ease both;
+        }
+
+        .toast-error   { background: #c0392b; }
+        .toast-success { background: #1a7a4a; }
+
+        @keyframes toastIn {
+            from { opacity: 0; transform: translateX(20px); }
+            to   { opacity: 1; transform: translateX(0); }
+        }
+
+        /* ── SIT IN BUTTON ── */
+        .btn-sitin {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 8px 20px;
             background: linear-gradient(135deg, var(--navy), var(--navy-light));
             color: white;
-            border-color: transparent;
+            border: none;
+            border-radius: 8px;
+            font-size: 13px;
+            font-weight: 700;
+            font-family: 'DM Sans', sans-serif;
+            cursor: pointer;
             box-shadow: 0 2px 8px rgba(15,38,83,0.22);
+            transition: transform 0.15s, box-shadow 0.15s;
         }
 
-        .empty-row td {
-            text-align: center;
-            color: var(--muted);
-            padding: 40px 20px !important;
-            font-size: 13.5px;
-        }
-
-        @media (max-width: 768px) {
-            .nav-title { display: none; }
-            .page-wrapper { padding: 20px 16px 40px; }
-            .page-header { flex-direction: column; align-items: flex-start; }
-        }
+        .btn-sitin:hover { transform: translateY(-1px); box-shadow: 0 4px 14px rgba(15,38,83,0.32); }
 
         /* ── MODAL ── */
         .modal-overlay {
@@ -499,123 +432,68 @@ $conn->close();
         .modal-header {
             background: linear-gradient(135deg, var(--navy) 0%, var(--navy-light) 100%);
             padding: 16px 22px;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
+            display: flex; align-items: center; justify-content: space-between;
         }
 
-        .modal-header h3 {
-            font-size: 15px;
-            font-weight: 700;
-            color: white;
-            letter-spacing: 0.3px;
-        }
+        .modal-header h3 { font-size: 15px; font-weight: 700; color: white; }
 
         .modal-close {
             background: rgba(255,255,255,0.15);
-            border: none;
-            color: white;
-            width: 28px;
-            height: 28px;
-            border-radius: 6px;
-            font-size: 16px;
+            border: none; color: white;
+            width: 28px; height: 28px;
+            border-radius: 6px; font-size: 16px;
             cursor: pointer;
-            display: flex;
-            align-items: center;
-            justify-content: center;
+            display: flex; align-items: center; justify-content: center;
             transition: background 0.15s;
             font-family: 'DM Sans', sans-serif;
         }
 
         .modal-close:hover { background: rgba(255,255,255,0.28); }
-
-        .modal-body {
-            padding: 24px 24px 8px;
-        }
+        .modal-body { padding: 24px 24px 8px; }
 
         .modal-field {
-            display: flex;
-            align-items: center;
-            gap: 0;
+            display: flex; align-items: center;
             margin-bottom: 14px;
             border: 1.5px solid var(--border);
-            border-radius: 9px;
-            overflow: hidden;
+            border-radius: 9px; overflow: hidden;
             background: var(--bg);
             transition: border-color 0.18s, box-shadow 0.18s;
         }
 
-        .modal-field:focus-within {
-            border-color: var(--accent);
-            box-shadow: 0 0 0 3px rgba(59,111,212,0.1);
-            background: white;
-        }
+        .modal-field:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(59,111,212,0.1); background: white; }
 
         .modal-field label {
-            font-size: 12px;
-            font-weight: 700;
-            color: var(--muted);
-            white-space: nowrap;
-            padding: 10px 14px;
+            font-size: 12px; font-weight: 700; color: var(--muted);
+            white-space: nowrap; padding: 10px 14px;
             border-right: 1.5px solid var(--border);
-            min-width: 140px;
-            background: var(--tag-bg);
+            min-width: 150px; background: var(--tag-bg);
         }
 
         .modal-field input,
         .modal-field select {
-            flex: 1;
-            border: none;
-            background: transparent;
-            padding: 10px 14px;
-            font-size: 13.5px;
+            flex: 1; border: none; background: transparent;
+            padding: 10px 14px; font-size: 13.5px;
             font-family: 'DM Sans', sans-serif;
-            color: var(--text);
-            outline: none;
+            color: var(--text); outline: none;
         }
 
-        .modal-field select {
-            cursor: pointer;
-            appearance: none;
-        }
+        .modal-field select { cursor: pointer; appearance: none; }
+        .modal-field input[readonly] { color: var(--muted); cursor: not-allowed; }
 
-        .modal-field input[readonly] {
-            color: var(--muted);
-            cursor: not-allowed;
-        }
-
-        /* Sessions field: highlight red if 0 */
-        .modal-field input.sessions-zero {
-            color: #c0392b;
-            font-weight: 700;
-        }
-
-        /* Sessions hint text shown below the field */
-        .sessions-hint {
-            font-size: 11.5px;
-            margin: -8px 0 10px 0;
-            padding: 0 4px;
-        }
+        .sessions-hint { font-size: 11.5px; margin: -8px 0 10px 0; padding: 0 4px; }
         .sessions-hint.hint-new    { color: var(--accent); }
         .sessions-hint.hint-exists { color: var(--muted); }
 
         .modal-footer {
             padding: 16px 24px 20px;
-            display: flex;
-            justify-content: flex-end;
-            gap: 10px;
+            display: flex; justify-content: flex-end; gap: 10px;
         }
 
         .btn-modal-close {
-            padding: 9px 22px;
-            background: white;
-            color: var(--text);
-            border: 1.5px solid var(--border);
-            border-radius: 8px;
-            font-size: 13px;
-            font-weight: 600;
-            font-family: 'DM Sans', sans-serif;
-            cursor: pointer;
+            padding: 9px 22px; background: white; color: var(--text);
+            border: 1.5px solid var(--border); border-radius: 8px;
+            font-size: 13px; font-weight: 600;
+            font-family: 'DM Sans', sans-serif; cursor: pointer;
             transition: background 0.15s;
         }
 
@@ -624,71 +502,20 @@ $conn->close();
         .btn-modal-submit {
             padding: 9px 24px;
             background: linear-gradient(135deg, var(--navy), var(--navy-light));
-            color: white;
-            border: none;
-            border-radius: 8px;
-            font-size: 13px;
-            font-weight: 700;
-            font-family: 'DM Sans', sans-serif;
-            cursor: pointer;
+            color: white; border: none; border-radius: 8px;
+            font-size: 13px; font-weight: 700;
+            font-family: 'DM Sans', sans-serif; cursor: pointer;
             box-shadow: 0 3px 10px rgba(15,38,83,0.22);
             transition: transform 0.15s, box-shadow 0.15s;
         }
 
-        .btn-modal-submit:hover {
-            transform: translateY(-1px);
-            box-shadow: 0 5px 16px rgba(15,38,83,0.32);
-        }
+        .btn-modal-submit:hover { transform: translateY(-1px); box-shadow: 0 5px 16px rgba(15,38,83,0.32); }
+        .btn-modal-submit:disabled { opacity: 0.45; cursor: not-allowed; transform: none; }
 
-        .btn-modal-submit:disabled {
-            opacity: 0.45;
-            cursor: not-allowed;
-            transform: none;
-        }
-
-        .btn-sitin {
-            display: inline-flex;
-            align-items: center;
-            gap: 6px;
-            padding: 8px 20px;
-            background: linear-gradient(135deg, var(--navy), var(--navy-light));
-            color: white;
-            border: none;
-            border-radius: 8px;
-            font-size: 13px;
-            font-weight: 700;
-            font-family: 'DM Sans', sans-serif;
-            cursor: pointer;
-            box-shadow: 0 2px 8px rgba(15,38,83,0.22);
-            transition: transform 0.15s, box-shadow 0.15s;
-        }
-
-        .btn-sitin:hover {
-            transform: translateY(-1px);
-            box-shadow: 0 4px 14px rgba(15,38,83,0.32);
-        }
-
-        /* ── ERROR / SUCCESS TOAST ── */
-        .toast {
-            position: fixed;
-            top: 72px;
-            right: 24px;
-            padding: 12px 20px;
-            border-radius: 10px;
-            font-size: 13px;
-            font-weight: 600;
-            color: white;
-            z-index: 9999;
-            box-shadow: 0 4px 16px rgba(0,0,0,0.2);
-            animation: toastIn 0.3s ease both;
-        }
-
-        .toast-error   { background: #c0392b; }
-        .toast-success { background: #1a7a4a; }
-
-        @keyframes toastIn {
-            from { opacity: 0; transform: translateX(20px); }
-            to   { opacity: 1; transform: translateX(0); }
+        @media (max-width: 768px) {
+            .nav-title { display: none; }
+            .page-wrapper { padding: 20px 16px 40px; }
+            .page-header { flex-direction: column; align-items: flex-start; }
         }
     </style>
 </head>
@@ -699,11 +526,11 @@ $conn->close();
 <div class="toast toast-error" id="toast">
     <?php
     $errors = [
-        'missing_fields'   => '⚠️ Please fill in all required fields.',
-        'student_not_found'=> '❌ Student ID not found.',
-        'no_sessions'      => '🚫 Student has no remaining sessions.',
-        'already_sitin'    => '⚠️ Student already has an active sit-in session.',
-        'insert_failed'    => '❌ Failed to record sit-in. Please try again.',
+        'missing_fields'    => '⚠️ Please fill in all required fields.',
+        'student_not_found' => '❌ Student ID not found.',
+        'no_sessions'       => '🚫 Student has no remaining sessions.',
+        'already_sitin'     => '⚠️ Student already has an active sit-in session.',
+        'insert_failed'     => '❌ Failed to record sit-in. Please try again.',
     ];
     echo htmlspecialchars($errors[$_GET['error']] ?? 'An error occurred.');
     ?>
@@ -725,6 +552,7 @@ $conn->close();
         <a href="admin_Student.php">Students</a>
         <a href="admin_SitIn.php" class="active">Sit-in</a>
         <a href="admin_ViewSitInRecords.php">View Sit-in Records</a>
+        <a href="#">Sit-in Reports</a>
         <a href="#">Feedback Reports</a>
         <a href="#">Reservation</a>
         <a href="landingpage.php" class="btn-logout">Log out</a>
@@ -737,12 +565,12 @@ $conn->close();
     <div class="page-header">
         <div class="page-header-left">
             <h2>Sit-in Management</h2>
-            <p>Monitor and manage current student laboratory sit-in sessions.</p>
+            <p>Currently active student laboratory sit-in sessions.</p>
         </div>
-        <button class="btn-sitin" onclick="openSitInModal()">&#128187; Sit In</button>
+        <button class="btn-sitin" onclick="openSitInModal()">&#128187; New Sit In</button>
     </div>
 
-    <!-- SIT IN MODAL -->
+    <!-- SIT IN MODAL (manual entry from this page) -->
     <div class="modal-overlay" id="sitInModal">
         <div class="modal">
             <div class="modal-header">
@@ -761,8 +589,7 @@ $conn->close();
 
                     <div class="modal-field">
                         <label>Student Name:</label>
-                        <input type="text" name="student_name" id="modal_name"
-                               placeholder="Auto-filled" readonly>
+                        <input type="text" name="student_name" id="modal_name" placeholder="Auto-filled" readonly>
                     </div>
 
                     <div class="modal-field">
@@ -793,7 +620,6 @@ $conn->close();
                         </select>
                     </div>
 
-                    <!-- Editable if student has no sessions yet; read-only if they already have some -->
                     <div class="modal-field">
                         <label>Remaining Session:</label>
                         <input type="number" name="remaining_session" id="modal_sessions"
@@ -813,24 +639,10 @@ $conn->close();
     <!-- STAT STRIP -->
     <div class="stat-strip">
         <div class="stat-pill">
-            <div class="sp-icon">🖥️</div>
+            <div class="sp-icon">🟢</div>
             <div>
                 <div class="sp-value"><?= count($sitins) ?></div>
-                <div class="sp-label">Total Records</div>
-            </div>
-        </div>
-        <div class="stat-pill">
-            <div class="sp-icon">✅</div>
-            <div>
-                <div class="sp-value" id="activeCount">—</div>
-                <div class="sp-label">Active Now</div>
-            </div>
-        </div>
-        <div class="stat-pill">
-            <div class="sp-icon">🏁</div>
-            <div>
-                <div class="sp-value" id="doneCount">—</div>
-                <div class="sp-label">Completed</div>
+                <div class="sp-label">Currently Active</div>
             </div>
         </div>
     </div>
@@ -839,8 +651,21 @@ $conn->close();
     <div class="card">
         <div class="card-header">
             <div class="hicon">🖥️</div>
-            Current Sit-in Sessions
+            Active Sit-in Sessions
+            <?php if (!empty($sitins)): ?>
+            <span class="live-badge">● LIVE</span>
+            <?php endif; ?>
         </div>
+
+        <?php if (empty($sitins)): ?>
+        <!-- ── EMPTY STATE: no one is currently sitting in ── -->
+        <div class="empty-state">
+            <div class="es-icon">🖥️</div>
+            <h4>No Active Sit-in Sessions</h4>
+            <p>All students have been logged out. New sit-ins will appear here when recorded.</p>
+        </div>
+
+        <?php else: ?>
 
         <div class="table-controls">
             <div class="entries-label">
@@ -868,41 +693,27 @@ $conn->close();
                         <th onclick="sortTable(2)">Lab ⬦</th>
                         <th onclick="sortTable(3)">Purpose ⬦</th>
                         <th onclick="sortTable(4)">Time In ⬦</th>
-                        <th onclick="sortTable(5)">Time Out ⬦</th>
-                        <th onclick="sortTable(6)">Status ⬦</th>
+                        <th onclick="sortTable(5)">Status ⬦</th>
                         <th>Actions</th>
                     </tr>
                 </thead>
                 <tbody id="tableBody">
-                    <?php if (empty($sitins)): ?>
-                    <tr class="empty-row">
-                        <td colspan="8">No sit-in sessions found.</td>
-                    </tr>
-                    <?php else: ?>
                     <?php foreach ($sitins as $s): ?>
                     <tr>
-                        <td class="id-cell"><?= htmlspecialchars($s['student_id'] ?? $s['IdNumber'] ?? '—') ?></td>
+                        <td class="id-cell"><?= htmlspecialchars($s['student_id'] ?? '—') ?></td>
                         <td><?= htmlspecialchars($s['student_name'] ?? '—') ?></td>
                         <td><?= htmlspecialchars($s['lab'] ?? '—') ?></td>
                         <td><?= htmlspecialchars($s['purpose'] ?? '—') ?></td>
                         <td><?= htmlspecialchars($s['time_in'] ?? '—') ?></td>
-                        <td><?= !empty($s['time_out']) ? htmlspecialchars($s['time_out']) : '<span style="color:var(--muted);font-size:12px;">—</span>' ?></td>
+                        <td><span class="status-active">🟢 Active</span></td>
                         <td>
-                            <?php $active = empty($s['time_out']); ?>
-                            <span class="status-badge <?= $active ? 'status-active' : 'status-done' ?>">
-                                <?= $active ? '🟢 Active' : '⚪ Done' ?>
-                            </span>
-                        </td>
-                        <td>
-                            <?php if ($active): ?>
-                            <button class="btn-timeout" onclick="timeOut('<?= $s['id'] ?? '' ?>')">🔚 Time Out</button>
-                            <?php else: ?>
-                            <span style="font-size:12px;color:var(--muted);">Completed</span>
-                            <?php endif; ?>
+                            <button class="btn-timeout"
+                                onclick="timeOut('<?= $s['id'] ?>')">
+                                🔚 Time Out
+                            </button>
                         </td>
                     </tr>
                     <?php endforeach; ?>
-                    <?php endif; ?>
                 </tbody>
             </table>
         </div>
@@ -915,26 +726,19 @@ $conn->close();
                 <button class="page-btn" onclick="changePage(1)">Next →</button>
             </div>
         </div>
+
+        <?php endif; ?>
     </div>
 
 </div>
 
 <script>
-    const allRows = Array.from(document.querySelectorAll('#tableBody tr:not(.empty-row)'));
+    const allRows = Array.from(document.querySelectorAll('#tableBody tr'));
     let currentPage = 1;
 
-    // Count active/done
-    let active = 0, done = 0;
-    allRows.forEach(row => {
-        if (row.innerText.includes('Active')) active++;
-        else done++;
-    });
-    document.getElementById('activeCount').textContent = active;
-    document.getElementById('doneCount').textContent   = done;
-
     function applyFilter() {
-        const q = document.getElementById('searchInput').value.toLowerCase();
-        const perPage = parseInt(document.getElementById('entriesSelect').value);
+        const q       = document.getElementById('searchInput')?.value.toLowerCase() ?? '';
+        const perPage = parseInt(document.getElementById('entriesSelect')?.value ?? 10);
 
         const filtered = allRows.filter(row => {
             const match = row.innerText.toLowerCase().includes(q);
@@ -950,19 +754,21 @@ $conn->close();
         });
 
         const showing = Math.min(perPage, Math.max(0, filtered.length - start));
-        document.getElementById('paginationInfo').textContent =
-            `Showing ${showing} of ${filtered.length} entries`;
+        const info = document.getElementById('paginationInfo');
+        if (info) info.textContent = `Showing ${showing} of ${filtered.length} entries`;
     }
 
     function changePage(dir) {
         currentPage = Math.max(1, currentPage + dir);
-        document.getElementById('pageIndicator').textContent = currentPage;
+        const ind = document.getElementById('pageIndicator');
+        if (ind) ind.textContent = currentPage;
         applyFilter();
     }
 
     function sortTable(col) {
         const tbody = document.getElementById('tableBody');
-        const rows  = Array.from(tbody.querySelectorAll('tr:not(.empty-row)'));
+        if (!tbody) return;
+        const rows = Array.from(tbody.querySelectorAll('tr'));
         rows.sort((a, b) => {
             const aText = a.cells[col]?.innerText.trim() ?? '';
             const bText = b.cells[col]?.innerText.trim() ?? '';
@@ -972,9 +778,10 @@ $conn->close();
         applyFilter();
     }
 
+    // ── TIME OUT: sets time_out for this sit-in record ──
     function timeOut(id) {
-        if (confirm('Mark this session as timed out?')) {
-            window.location.href = 'timeout_sitin.php?id=' + id;
+        if (confirm('Mark this student as timed out? They will be removed from the active list.')) {
+            window.location.href = 'timeout_sitin.php?id=' + id + '&redirect=admin_SitIn.php';
         }
     }
 
@@ -982,7 +789,7 @@ $conn->close();
     const toast = document.getElementById('toast');
     if (toast) setTimeout(() => toast.style.display = 'none', 4000);
 
-    // ── MODAL ──
+    // ── MODAL (for manual "New Sit In" button) ──
     function openSitInModal() {
         document.getElementById('sitInModal').classList.add('open');
         document.getElementById('modal_id').focus();
@@ -990,30 +797,25 @@ $conn->close();
 
     function closeSitInModal() {
         document.getElementById('sitInModal').classList.remove('open');
-        document.getElementById('modal_id').value       = '';
-        document.getElementById('modal_name').value     = '';
+        document.getElementById('modal_id').value   = '';
+        document.getElementById('modal_name').value = '';
         const si = document.getElementById('modal_sessions');
         si.value    = '';
         si.readOnly = false;
-        si.classList.remove('sessions-zero');
         document.getElementById('sessions_hint').textContent = '';
         document.getElementById('sessions_hint').className   = 'sessions-hint';
         document.getElementById('btnSitIn').disabled = false;
     }
 
-    // Close modal when clicking backdrop
     document.getElementById('sitInModal').addEventListener('click', function(e) {
         if (e.target === this) closeSitInModal();
     });
 
-    // Close on Escape key
     document.addEventListener('keydown', function(e) {
         if (e.key === 'Escape') closeSitInModal();
     });
 
-    // ── AUTO-FILL student name & sessions from ID number via AJAX ──
-    // If sessions = 0 or NULL → admin must enter the session count (editable).
-    // If sessions > 0 → field is read-only; process_sitin.php will deduct 1.
+    // ── AJAX student lookup (for manual modal) ──
     let lookupTimeout;
     function lookupStudent(id) {
         clearTimeout(lookupTimeout);
@@ -1025,7 +827,6 @@ $conn->close();
             document.getElementById('modal_name').value = '';
             sessionsInput.value    = '';
             sessionsInput.readOnly = false;
-            sessionsInput.classList.remove('sessions-zero');
             hint.textContent = '';
             hint.className   = 'sessions-hint';
             submitBtn.disabled = false;
@@ -1038,32 +839,25 @@ $conn->close();
                 .then(data => {
                     if (data.found) {
                         document.getElementById('modal_name').value = data.name;
-
                         const sessions = parseInt(data.sessions) || 0;
 
                         if (sessions <= 0) {
-                            // ── First time or depleted: admin sets the session count ──
-                            sessionsInput.value    = '';
-                            sessionsInput.readOnly = false;
-                            sessionsInput.classList.remove('sessions-zero');
+                            sessionsInput.value       = '';
+                            sessionsInput.readOnly    = false;
                             sessionsInput.placeholder = 'Enter no. of sessions';
                             hint.textContent = '⚠️ No sessions set yet — enter the number of sessions to assign.';
                             hint.className   = 'sessions-hint hint-new';
-                            submitBtn.disabled = false;
                         } else {
-                            // ── Returning student: show remaining, lock field ──
                             sessionsInput.value    = sessions;
                             sessionsInput.readOnly = true;
-                            sessionsInput.classList.remove('sessions-zero');
                             hint.textContent = '✅ 1 session will be deducted on Sit In.';
                             hint.className   = 'sessions-hint hint-exists';
-                            submitBtn.disabled = false;
                         }
+                        submitBtn.disabled = false;
                     } else {
                         document.getElementById('modal_name').value = '';
                         sessionsInput.value    = '';
                         sessionsInput.readOnly = false;
-                        sessionsInput.classList.remove('sessions-zero');
                         hint.textContent = '';
                         hint.className   = 'sessions-hint';
                         submitBtn.disabled = false;

@@ -19,13 +19,12 @@ if ($conn->connect_error) {
 // Fetch sessions remaining from the most recent sitin record for this student
 // Falls back to 0 if no record exists or sessions is NULL
 $sessions_remaining = 0;
+// ✅ Correct - reads directly from student table
+$sessions_remaining = 0;
 $stmt = $conn->prepare("
     SELECT sessions 
-    FROM sitin 
-    WHERE student_id = ? 
-      AND sessions IS NOT NULL 
-    ORDER BY id DESC 
-    LIMIT 1
+    FROM student 
+    WHERE IdNumber = ?
 ");
 $stmt->bind_param('s', $_SESSION['student_id']);
 $stmt->execute();

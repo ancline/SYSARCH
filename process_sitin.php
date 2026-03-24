@@ -16,122 +16,94 @@ if ($conn->connect_error) {
     die("Connection failed: " . $conn->connect_error);
 }
 
-// Validate required fields (we do NOT trust $_POST['remaining_session'] — always read from DB)
-$student_id   = trim($_POST['student_id']   ?? '');
-$student_name = trim($_POST['student_name'] ?? '');
-$purpose      = trim($_POST['purpose']      ?? '');
-$lab          = trim($_POST['lab']          ?? '');
+// ── Validate required fields ──
+$student_id       = trim($_POST['student_id']       ?? '');
+$student_name     = trim($_POST['student_name']     ?? '');
+$purpose          = trim($_POST['purpose']          ?? '');
+$lab              = trim($_POST['lab']              ?? '');
+$remaining_session = trim($_POST['remaining_session'] ?? '');
 
 if (empty($student_id) || empty($purpose) || empty($lab)) {
     header('Location: admin_SitIn.php?error=missing_fields');
     exit();
 }
 
-// ── Detect the sessions column name in the student table ──
-$session_col  = null;
-$cols_result  = $conn->query("SHOW COLUMNS FROM student");
-while ($col = $cols_result->fetch_assoc()) {
-    if (preg_match('/^(sessions?|no_?of_?sessions?|remaining_?sessions?|session_?count)$/i', $col['Field'])) {
-        $session_col = $col['Field'];
-        break;
-    }
-}
-
-$select_cols = $session_col
-    ? "IdNumber, FirstName, LastName, `$session_col` AS sessions"
-    : "IdNumber, FirstName, LastName";
-
-// ── Verify student exists ──
-$stmt = $conn->prepare("SELECT $select_cols FROM student WHERE IdNumber = ?");
+// ── Look up student ──
+$stmt = $conn->prepare("SELECT IdNumber, FirstName, MiddleName, LastName, sessions FROM student WHERE IdNumber = ?");
 $stmt->bind_param('s', $student_id);
 $stmt->execute();
 $result = $stmt->get_result();
+$student = $result->fetch_assoc();
+$stmt->close();
 
-if ($result->num_rows === 0) {
-    $stmt->close();
-    $conn->close();
+if (!$student) {
     header('Location: admin_SitIn.php?error=student_not_found');
     exit();
 }
 
-$student = $result->fetch_assoc();
-$stmt->close();
-
-// ── Read remaining sessions directly from the DB ──
-$current_sessions = isset($student['sessions']) ? (int)$student['sessions'] : 0;
-
-// ── Determine new session count ──
-if ($current_sessions <= 0) {
-    // First time (or depleted): admin must have entered a session count
-    $admin_sessions = (int)($_POST['remaining_session'] ?? 0);
-    if ($admin_sessions < 1) {
-        $conn->close();
-        header('Location: admin_SitIn.php?error=missing_fields');
-        exit();
-    }
-    // Save the admin-set value to student, then deduct 1 for this sit-in
-    $new_sessions = $admin_sessions - 1;
-} else {
-    // Returning student: just deduct 1 from existing count
-    $new_sessions = $current_sessions - 1;
+// ── Build full name if not passed ──
+if (empty($student_name)) {
+    $student_name = trim($student['FirstName'] . ' ' . $student['MiddleName'] . ' ' . $student['LastName']);
 }
 
-// ── Check if student already has an active sit-in ──
-$stmt = $conn->prepare("SELECT id FROM sitin WHERE student_id = ? AND time_out IS NULL");
-$stmt->bind_param('s', $student_id);
-$stmt->execute();
-$active_check = $stmt->get_result();
-
-if ($active_check->num_rows > 0) {
-    $stmt->close();
-    $conn->close();
+// ── Check for existing active sit-in ──
+$check = $conn->prepare("SELECT id FROM sitin WHERE student_id = ? AND time_out IS NULL");
+$check->bind_param('s', $student_id);
+$check->execute();
+$check->store_result();
+if ($check->num_rows > 0) {
+    $check->close();
     header('Location: admin_SitIn.php?error=already_sitin');
     exit();
 }
-$stmt->close();
+$check->close();
 
-// ── Save updated session count to the student table ──
-if ($session_col) {
-    $stmt = $conn->prepare("UPDATE student SET `$session_col` = ? WHERE IdNumber = ?");
-    $stmt->bind_param('is', $new_sessions, $student_id);
-    $stmt->execute();
-    $stmt->close();
+$current_sessions = (int)($student['sessions'] ?? 0);
+
+// ── Determine sessions to store ──
+if ($current_sessions > 0) {
+    // Deduct 1 session from existing sessions
+    $new_sessions = $current_sessions - 1;
+    $store_sessions = $current_sessions; // store remaining before deduction
+
+    $upd = $conn->prepare("UPDATE student SET sessions = ? WHERE IdNumber = ?");
+    $upd->bind_param('is', $new_sessions, $student_id);
+    $upd->execute();
+    $upd->close();
+} else {
+    // Admin entered session count — assign it to student and record
+    if (!empty($remaining_session) && (int)$remaining_session > 0) {
+        $assigned = (int)$remaining_session;
+        $new_sessions = $assigned - 1; // deduct 1 for this sit-in
+
+        $upd = $conn->prepare("UPDATE student SET sessions = ? WHERE IdNumber = ?");
+        $upd->bind_param('is', $new_sessions, $student_id);
+        $upd->execute();
+        $upd->close();
+
+        $store_sessions = $assigned;
+    } else {
+        // No sessions — can't sit in
+        header('Location: admin_SitIn.php?error=no_sessions');
+        exit();
+    }
 }
-
-// ── Ensure sitin table exists with sessions column ──
-$conn->query("
-    CREATE TABLE IF NOT EXISTS sitin (
-        id           INT AUTO_INCREMENT PRIMARY KEY,
-        student_id   VARCHAR(50)  NOT NULL,
-        student_name VARCHAR(150) NOT NULL,
-        lab          VARCHAR(100) NOT NULL,
-        purpose      VARCHAR(255) DEFAULT '',
-        sessions     INT          DEFAULT NULL,
-        time_in      DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        time_out     DATETIME     DEFAULT NULL
-    )
-");
-$conn->query("ALTER TABLE sitin ADD COLUMN IF NOT EXISTS sessions INT DEFAULT NULL");
 
 // ── Insert sit-in record ──
-// Store new_sessions (AFTER deduction) so the sitin record reflects what remains
-$full_name = trim($student['FirstName'] . ' ' . $student['LastName']);
-
-$stmt = $conn->prepare("
-    INSERT INTO sitin (student_id, student_name, lab, purpose, sessions, time_in)
-    VALUES (?, ?, ?, ?, ?, NOW())
+$ins = $conn->prepare("
+    INSERT INTO sitin (student_id, student_name, lab, purpose, time_in, sessions)
+    VALUES (?, ?, ?, ?, NOW(), ?)
 ");
-$stmt->bind_param('ssssi', $student_id, $full_name, $lab, $purpose, $new_sessions);
+$ins->bind_param('ssssi', $student_id, $student_name, $lab, $purpose, $store_sessions);
+$success = $ins->execute();
+$ins->close();
 
-if (!$stmt->execute()) {
-    $stmt->close();
-    $conn->close();
-    header('Location: admin_SitIn.php?error=insert_failed');
-    exit();
-}
-
-$stmt->close();
 $conn->close();
 
-header('Location: admin_SitIn.php?success=sitin_added');
+if ($success) {
+    // ── Redirect to admin_SitIn.php showing active sit-ins ──
+    header('Location: admin_SitIn.php?success=1');
+} else {
+    header('Location: admin_SitIn.php?error=insert_failed');
+}
 exit();
