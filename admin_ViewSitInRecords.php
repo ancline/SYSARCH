@@ -502,29 +502,27 @@ $conn->close();
             <table>
                 <thead>
                     <tr>
-                        <th onclick="sortTable(0)">Sit ID Number</th>
-                        <th onclick="sortTable(1)">ID Number</th>
-                        <th onclick="sortTable(2)">Name</th>
-                        <th onclick="sortTable(3)">Purpose</th>
-                        <th onclick="sortTable(4)">Sit Lab</th>
-                        <th onclick="sortTable(5)">Session</th>
-                        <th onclick="sortTable(6)">Time In</th>
-                        <th onclick="sortTable(7)">Time Out</th>
-                        <th onclick="sortTable(8)">Status</th>
+                        <th onclick="sortTable(0)">ID Number</th>
+                        <th onclick="sortTable(1)">Name</th>
+                        <th onclick="sortTable(2)">Purpose</th>
+                        <th onclick="sortTable(3)">Sit Lab</th>
+                        <th onclick="sortTable(4)">Session</th>
+                        <th onclick="sortTable(5)">Time In</th>
+                        <th onclick="sortTable(6)">Time Out</th>
+                        <th onclick="sortTable(7)">Status</th>
                         <th>Actions</th>
                     </tr>
                 </thead>
                 <tbody id="tableBody">
                     <?php if (empty($records)): ?>
                     <tr class="empty-row">
-                        <td colspan="10">No data available</td>
+                        <td colspan="9">No data available</td>
                     </tr>
                     <?php else: ?>
                     <?php foreach ($records as $r):
                         $is_active = empty($r['time_out']);
                     ?>
-                    <tr>
-                        <td class="id-cell"><?= htmlspecialchars($r['id']) ?></td>
+                    <tr data-id="<?= $r['id'] ?>">
                         <td class="id-cell"><?= htmlspecialchars($r['student_id']) ?></td>
                         <td><?= htmlspecialchars($r['student_name']) ?></td>
                         <td><?= htmlspecialchars($r['purpose'] ?? '—') ?></td>
