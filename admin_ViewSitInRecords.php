@@ -32,13 +32,13 @@ $conn->query("
 // Add sessions column to sitin if missing (migration safety)
 $conn->query("ALTER TABLE sitin ADD COLUMN IF NOT EXISTS sessions INT DEFAULT NULL");
 
-// JOIN student table to get live session count
+// FIX: Use the stored sessions snapshot from sitin table directly.
+// NO live JOIN to student table — past records will never change.
 $result = $conn->query("
-    SELECT s.id, s.student_id, s.student_name, s.purpose, s.lab,
-           st.sessions, s.time_in, s.time_out
-    FROM sitin s
-    LEFT JOIN student st ON st.IdNumber = s.student_id
-    ORDER BY s.id DESC
+    SELECT id, student_id, student_name, purpose, lab,
+           sessions, time_in, time_out
+    FROM sitin
+    ORDER BY id DESC
 ");
 
 $records = [];
