@@ -472,7 +472,7 @@ $conn->close();
 <div class="page-wrapper">
 
     <div class="page-header">
-        <h2>Current Sit-in</h2>
+        <h2>Sit-In Records</h2>
     </div>
 
     <div class="card">
