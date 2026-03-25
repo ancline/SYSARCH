@@ -1,9 +1,4 @@
 <?php
-// ============================================================
-// PASTE THIS into whichever file handles the sit-in INSERT
-// (likely admin_SitIn.php or a form-action handler)
-// Replace the existing INSERT block with the code below.
-// ============================================================
 
 // 1. Fetch the student's CURRENT session count as a snapshot
 $stmt = $conn->prepare("SELECT sessions FROM student WHERE IdNumber = ?");
