@@ -16,6 +16,18 @@ if ($conn->connect_error) {
     die("Connection failed: " . $conn->connect_error);
 }
 
+// ── AUTO-CREATE notifications table if missing ──
+$conn->query("
+    CREATE TABLE IF NOT EXISTS notifications (
+        id          INT AUTO_INCREMENT PRIMARY KEY,
+        student_id  VARCHAR(50) NULL,
+        title       VARCHAR(255) NOT NULL,
+        message     TEXT NOT NULL,
+        is_read     TINYINT(1) DEFAULT 0,
+        created_at  DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+");
+
 // Fetch sessions remaining from student table
 $sessions_remaining = 0;
 $stmt = $conn->prepare("SELECT sessions FROM student WHERE IdNumber = ?");
