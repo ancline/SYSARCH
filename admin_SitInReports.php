@@ -17,14 +17,12 @@ if ($conn->connect_error) {
 }
 
 // --- FILTERS ---
-// Actual sitin columns: id, student_id, student_name, lab, purpose, time_in, time_out, sessions
 $filter_date_from = $_GET['date_from'] ?? '';
 $filter_date_to   = $_GET['date_to']   ?? '';
 $filter_purpose   = $_GET['purpose']   ?? '';
 $filter_lab       = $_GET['lab']       ?? '';
 $filter_idno      = trim($_GET['idno'] ?? '');
 
-// Build WHERE clause
 $conditions = [];
 $params     = [];
 $types      = '';
@@ -57,7 +55,6 @@ if ($filter_idno !== '') {
 
 $where_sql = $conditions ? ('WHERE ' . implode(' AND ', $conditions)) : '';
 
-// Main records query — uses actual sitin column names
 $sql = "
     SELECT s.id, s.student_id, s.student_name, s.lab, s.purpose,
            s.time_in, s.time_out, s.sessions,
@@ -82,24 +79,13 @@ if ($result) {
     }
 }
 
-// Summary stats (filtered)
-$total_records   = count($records);
-$active_now      = array_filter($records, fn($r) => $r['time_out'] === null);
-$completed       = array_filter($records, fn($r) => $r['time_out'] !== null);
-$avg_duration    = 0;
-if (count($completed) > 0) {
-    $avg_duration = round(array_sum(array_column(iterator_to_array((function() use ($completed) {
-        foreach ($completed as $r) yield $r;
-    })()), 'duration_min')) / count($completed));
-}
-// simpler avg calc
+$total_records = count($records);
 $dur_sum = 0; $dur_cnt = 0;
 foreach ($records as $r) {
     if ($r['time_out'] !== null) { $dur_sum += $r['duration_min']; $dur_cnt++; }
 }
 $avg_duration = $dur_cnt > 0 ? round($dur_sum / $dur_cnt) : 0;
 
-// Distinct purposes & labs for filter dropdowns
 $purposes = [];
 $pr = $conn->query("SELECT DISTINCT purpose FROM sitin WHERE purpose IS NOT NULL ORDER BY purpose");
 if ($pr) while ($row = $pr->fetch_assoc()) $purposes[] = $row['purpose'];
@@ -108,12 +94,10 @@ $labs = [];
 $lr = $conn->query("SELECT DISTINCT lab FROM sitin WHERE lab IS NOT NULL ORDER BY lab");
 if ($lr) while ($row = $lr->fetch_assoc()) $labs[] = $row['lab'];
 
-// Purpose breakdown for chart
 $chart_purpose = [];
 $cpr = $conn->query("SELECT purpose, COUNT(*) AS cnt FROM sitin GROUP BY purpose ORDER BY cnt DESC");
 if ($cpr) while ($row = $cpr->fetch_assoc()) $chart_purpose[] = $row;
 
-// Daily trend (last 14 days)
 $chart_daily = [];
 $dr = $conn->query("
     SELECT DATE(time_in) AS day, COUNT(*) AS cnt
@@ -124,7 +108,6 @@ $dr = $conn->query("
 ");
 if ($dr) while ($row = $dr->fetch_assoc()) $chart_daily[] = $row;
 
-// Lab utilization
 $chart_lab = [];
 $labr = $conn->query("SELECT lab, COUNT(*) AS cnt FROM sitin WHERE lab IS NOT NULL GROUP BY lab ORDER BY cnt DESC");
 if ($labr) while ($row = $labr->fetch_assoc()) $chart_lab[] = $row;
@@ -139,9 +122,7 @@ $conn->close();
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=DM+Serif+Display&display=swap" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <!-- SheetJS for Excel export -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-    <!-- jsPDF for PDF export -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
 
@@ -172,7 +153,6 @@ $conn->close();
             color: var(--text);
         }
 
-        /* ── NAVBAR ── */
         .navbar {
             background: linear-gradient(135deg, var(--navy) 0%, var(--navy-mid) 100%);
             padding: 0 28px;
@@ -212,7 +192,6 @@ $conn->close();
         }
         .btn-logout:hover { transform: translateY(-1px); box-shadow: 0 4px 14px rgba(240,165,0,0.5) !important; }
 
-        /* ── PAGE ── */
         .page-wrapper { padding: 28px 32px 48px; animation: fadeUp 0.45s ease both; }
         @keyframes fadeUp {
             from { opacity: 0; transform: translateY(16px); }
@@ -223,7 +202,6 @@ $conn->close();
         .page-header-left h2 { font-family: 'DM Serif Display', serif; font-size: 24px; color: var(--navy); margin-bottom: 3px; }
         .page-header-left p { font-size: 13px; color: var(--muted); }
 
-        /* ── EXPORT BUTTONS ── */
         .export-group { display: flex; gap: 8px; flex-wrap: wrap; }
         .btn-export {
             display: inline-flex; align-items: center; gap: 6px;
@@ -240,7 +218,6 @@ $conn->close();
         .btn-excel:hover { box-shadow:0 4px 14px rgba(26,122,74,0.45); }
         .btn-print:hover { box-shadow:0 4px 14px rgba(36,82,160,0.45); }
 
-        /* ── STAT STRIP ── */
         .stat-strip { display: grid; grid-template-columns: repeat(4,1fr); gap: 14px; margin-bottom: 22px; }
         .stat-card {
             background: var(--panel); border-radius: 14px; border: 1px solid var(--border);
@@ -253,16 +230,12 @@ $conn->close();
         .stat-value { font-size: 26px; font-weight: 700; color: var(--navy); line-height: 1; margin-bottom: 3px; }
         .stat-label { font-size: 11px; color: var(--muted); font-weight: 500; text-transform: uppercase; letter-spacing: 0.4px; }
 
-        /* ── CARD ── */
         .card { background: var(--panel); border-radius: 16px; overflow: hidden; box-shadow: 0 4px 24px rgba(15,38,83,0.08); border: 1px solid var(--border); margin-bottom: 20px; }
         .card-header { background: linear-gradient(135deg,var(--navy) 0%,var(--navy-light) 100%); color: white; padding: 12px 18px; display: flex; align-items: center; gap: 9px; font-size: 13px; font-weight: 700; letter-spacing: 0.5px; text-transform: uppercase; }
         .card-header .hicon { width: 26px; height: 26px; background: rgba(255,255,255,0.15); border-radius: 7px; display: flex; align-items: center; justify-content: center; font-size: 14px; }
         .card-body { padding: 20px; }
 
-        /* ── FILTER BAR ── */
-        .filter-bar {
-            display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end;
-        }
+        .filter-bar { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end; }
         .filter-group { display: flex; flex-direction: column; gap: 4px; }
         .filter-group label { font-size: 11px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.4px; }
         .filter-group input,
@@ -286,11 +259,9 @@ $conn->close();
         .btn-reset { padding: 9px 16px; background: var(--tag-bg); color: var(--navy); border: 1.5px solid var(--border); border-radius: 8px; font-size: 13px; font-weight: 600; font-family: 'DM Sans', sans-serif; cursor: pointer; transition: background 0.15s; align-self: flex-end; text-decoration: none; }
         .btn-reset:hover { background: var(--border); }
 
-        /* ── CHARTS GRID ── */
         .charts-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; margin-bottom: 20px; }
         .chart-wrap { position: relative; height: 230px; }
 
-        /* ── TABLE ── */
         .table-meta { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; flex-wrap: wrap; gap: 8px; }
         .table-meta-count { font-size: 12.5px; color: var(--muted); font-weight: 500; }
         .table-search { padding: 7px 12px; border: 1.5px solid var(--border); border-radius: 7px; font-size: 13px; font-family: 'DM Sans', sans-serif; color: var(--text); background: var(--bg); outline: none; width: 220px; transition: border-color 0.18s; }
@@ -325,13 +296,11 @@ $conn->close();
 
         .table-scroll { overflow-x: auto; }
 
-        /* ── PAGINATION ── */
         .pagination { display: flex; align-items: center; gap: 6px; justify-content: flex-end; margin-top: 14px; }
         .pg-btn { padding: 6px 12px; border: 1.5px solid var(--border); border-radius: 7px; background: white; font-size: 12.5px; font-family: 'DM Sans', sans-serif; color: var(--navy); cursor: pointer; font-weight: 600; transition: background 0.15s; }
         .pg-btn:hover, .pg-btn.active { background: var(--navy); color: white; border-color: var(--navy); }
         .pg-info { font-size: 12px; color: var(--muted); }
 
-        /* ── PRINT STYLES ── */
         @media print {
             .navbar, .filter-bar, .export-group, .btn-filter, .btn-reset,
             .pagination, .table-search, .table-meta, .no-print { display: none !important; }
@@ -364,7 +333,6 @@ $conn->close();
 </head>
 <body>
 
-<!-- NAVBAR -->
 <div class="navbar no-print">
     <div class="nav-left">
         <img src="uclogo-removebg-preview.png" alt="UC Logo">
@@ -379,21 +347,18 @@ $conn->close();
         <a href="admin_ViewSitInRecords.php">View Sit-in Records</a>
         <a href="admin_SitInReports.php" class="active">Sit-in Reports</a>
         <a href="#">Feedback Reports</a>
-        <a href="#">Reservation</a>
+        <a href="admin_reservation.php">Reservation</a>
         <a href="landingpage.php" class="btn-logout">Log out</a>
     </div>
 </div>
 
-<!-- PAGE -->
 <div class="page-wrapper">
 
-    <!-- Print Header (hidden on screen, visible on print) -->
     <div class="print-header">
         <h1>College of Computer Studies — Sit-in Reports</h1>
         <p>Generated on: <?= date('F d, Y h:i A') ?></p>
     </div>
 
-    <!-- PAGE HEADER -->
     <div class="page-header">
         <div class="page-header-left">
             <h2>Sit-in Reports</h2>
@@ -406,7 +371,6 @@ $conn->close();
         </div>
     </div>
 
-    <!-- STAT STRIP -->
     <div class="stat-strip">
         <div class="stat-card">
             <div class="stat-icon">📋</div>
@@ -438,7 +402,6 @@ $conn->close();
         </div>
     </div>
 
-    <!-- CHARTS -->
     <div class="charts-grid">
         <div class="card">
             <div class="card-header"><div class="hicon">🎯</div> By Purpose</div>
@@ -460,7 +423,6 @@ $conn->close();
         </div>
     </div>
 
-    <!-- FILTERS -->
     <div class="card no-print">
         <div class="card-header"><div class="hicon">🔍</div> Filter Records</div>
         <div class="card-body">
@@ -507,7 +469,6 @@ $conn->close();
         </div>
     </div>
 
-    <!-- TABLE -->
     <div class="card">
         <div class="card-header"><div class="hicon">📋</div> Sit-in Records</div>
         <div class="card-body">
@@ -527,7 +488,9 @@ $conn->close();
                             <th>Lab</th>
                             <th>Purpose</th>
                             <th>Sessions</th>
+                            <th>Date In</th>
                             <th>Time In</th>
+                            <th>Date Out</th>
                             <th>Time Out</th>
                             <th>Duration</th>
                             <th>Status</th>
@@ -535,7 +498,7 @@ $conn->close();
                     </thead>
                     <tbody>
                         <?php if (empty($records)): ?>
-                            <tr><td colspan="10" class="no-data">No records found.</td></tr>
+                            <tr><td colspan="12" class="no-data">No records found.</td></tr>
                         <?php else: ?>
                             <?php foreach ($records as $i => $r): ?>
                             <tr>
@@ -545,8 +508,10 @@ $conn->close();
                                 <td><?= htmlspecialchars($r['lab'] ?? '-') ?></td>
                                 <td><?= htmlspecialchars($r['purpose'] ?? '-') ?></td>
                                 <td><?= htmlspecialchars($r['sessions'] ?? '-') ?></td>
-                                <td><?= $r['time_in'] ? date('Y-m-d H:i', strtotime($r['time_in'])) : '-' ?></td>
-                                <td><?= $r['time_out'] ? date('Y-m-d H:i', strtotime($r['time_out'])) : '-' ?></td>
+                                <td><?= $r['time_in']  ? date('Y-m-d', strtotime($r['time_in']))  : '-' ?></td>
+                                <td><?= $r['time_in']  ? date('H:i',   strtotime($r['time_in']))  : '-' ?></td>
+                                <td><?= $r['time_out'] ? date('Y-m-d', strtotime($r['time_out'])) : '-' ?></td>
+                                <td><?= $r['time_out'] ? date('H:i',   strtotime($r['time_out'])) : '-' ?></td>
                                 <td>
                                     <?php if ($r['time_out']): ?>
                                         <span class="duration-pill">
@@ -574,23 +539,20 @@ $conn->close();
                 </table>
             </div>
 
-            <!-- Pagination -->
             <div class="pagination no-print" id="pagination"></div>
 
         </div>
     </div>
 
-</div><!-- /page-wrapper -->
+</div>
 
 <script>
-// ───────── CHART DATA ─────────
 const purposeData = <?= json_encode($chart_purpose) ?>;
 const dailyData   = <?= json_encode($chart_daily) ?>;
 const labData     = <?= json_encode($chart_lab) ?>;
 
 const palette = ['#2452a0','#3b6fd4','#f0a500','#1a7a4a','#e74c3c','#8e44ad','#16a085','#d35400','#2980b9','#c0392b'];
 
-// Purpose Doughnut
 new Chart(document.getElementById('chartPurpose'), {
     type: 'doughnut',
     data: {
@@ -606,15 +568,13 @@ new Chart(document.getElementById('chartPurpose'), {
     }
 });
 
-// Daily Line Chart
 (function() {
-    // Fill missing days in last 14
     const today = new Date();
     const days = [], counts = [];
     for (let i = 13; i >= 0; i--) {
         const d = new Date(today); d.setDate(d.getDate() - i);
         const key = d.toISOString().slice(0,10);
-        days.push(key.slice(5)); // MM-DD
+        days.push(key.slice(5));
         const found = dailyData.find(x => x.day === key);
         counts.push(found ? +found.cnt : 0);
     }
@@ -635,7 +595,6 @@ new Chart(document.getElementById('chartPurpose'), {
     });
 })();
 
-// Lab Bar Chart
 new Chart(document.getElementById('chartLab'), {
     type: 'bar',
     data: {
@@ -652,7 +611,6 @@ new Chart(document.getElementById('chartLab'), {
     }
 });
 
-// ───────── TABLE SEARCH + PAGINATION ─────────
 const ROWS_PER_PAGE = 15;
 let currentPage = 1;
 
@@ -661,7 +619,7 @@ function getVisibleRows() {
     const tbody = document.getElementById('sitinTable').querySelector('tbody');
     const rows = Array.from(tbody.querySelectorAll('tr'));
     return rows.filter(row => {
-        if (row.querySelector('td[colspan]')) return false; // no-data row
+        if (row.querySelector('td[colspan]')) return false;
         if (!q) return true;
         return row.textContent.toLowerCase().includes(q);
     });
@@ -688,7 +646,6 @@ function renderTable() {
 
     document.getElementById('visibleCount').textContent = total;
 
-    // Pagination buttons
     const totalPages = Math.ceil(total / ROWS_PER_PAGE);
     const pag = document.getElementById('pagination');
     pag.innerHTML = '';
@@ -717,7 +674,6 @@ function renderTable() {
 
 renderTable();
 
-// ───────── EXPORT PDF ─────────
 function exportPDF() {
     const { jsPDF } = window.jspdf;
     const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
@@ -732,8 +688,7 @@ function exportPDF() {
     doc.setTextColor(107, 127, 163);
     doc.text(`Generated: ${new Date().toLocaleString()}`, 14, 22);
 
-    const headers = [['#','Student ID','Name','Lab','Purpose','Sessions','Time In','Time Out','Duration','Status']];
-
+    const headers = [['#','Student ID','Name','Lab','Purpose','Sessions','Date In','Time In','Date Out','Time Out','Duration','Status']];
     const rows = getTableRows();
 
     doc.autoTable({
@@ -751,28 +706,24 @@ function exportPDF() {
     doc.save('sitin_report_' + new Date().toISOString().slice(0,10) + '.pdf');
 }
 
-// ───────── EXPORT EXCEL ─────────
 function exportExcel() {
-    const headers = ['#','Student ID','Name','Lab','Purpose','Sessions','Time In','Time Out','Duration','Status'];
+    const headers = ['#','Student ID','Name','Lab','Purpose','Sessions','Date In','Time In','Date Out','Time Out','Duration','Status'];
     const rows = getTableRows();
 
     const wsData = [headers, ...rows];
     const ws = XLSX.utils.aoa_to_sheet(wsData);
-
-    // Column widths
-    ws['!cols'] = [5,12,22,14,6,16,10,18,18,12,10].map(w => ({ wch: w }));
+    ws['!cols'] = [5,12,22,14,14,10,12,10,12,10,12,10].map(w => ({ wch: w }));
 
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Sit-in Report');
     XLSX.writeFile(wb, 'sitin_report_' + new Date().toISOString().slice(0,10) + '.xlsx');
 }
 
-// ───────── SHARED: extract table rows ─────────
 function getTableRows() {
     const tbody = document.getElementById('sitinTable').querySelector('tbody');
     return Array.from(tbody.querySelectorAll('tr'))
         .filter(r => !r.querySelector('td[colspan]'))
-        .map((r, i) => {
+        .map((r) => {
             const cells = r.querySelectorAll('td');
             return Array.from(cells).map(c => c.textContent.trim());
         });

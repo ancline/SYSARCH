@@ -463,7 +463,7 @@ $conn->close();
         <a href="admin_ViewSitInRecords.php" class="active">View Sit-in Records</a>
         <a href="admin_SitInReports.php">Sit-in Reports</a>
         <a href="#">Feedback Reports</a>
-        <a href="#">Reservation</a>
+        <a href="admin_reservation.php">Reservation</a>
         <a href="landingpage.php" class="btn-logout">Log out</a>
     </div>
 </div>
