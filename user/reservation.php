@@ -587,7 +587,7 @@ $conn->close();
 <!-- NAVBAR -->
 <div class="navbar">
     <div class="nav-left">
-        <img src="uclogo-removebg-preview.png" alt="UC Logo">
+        <img src="/SYSARCH/uclogo-removebg-preview.png" alt="UC Logo">
         <div class="nav-divider"></div>
         <div class="nav-title">College of Computer Studies<br>Sit-in Monitoring System</div>
     </div>
@@ -605,11 +605,11 @@ $conn->close();
             </button>
         </div>
 
-        <a href="user_home.php">Home</a>
-        <a href="user_edit_profile.php">Edit Profile</a>
-        <a href="history.php">History</a>
-        <a href="reservation.php" class="active">Reservation</a>
-        <a href="landingpage.php" class="btn-logout">Log out</a>
+        <a href="/SYSARCH/user/user_home.php">Home</a>
+        <a href="/SYSARCH/user/user_edit_profile.php">Edit Profile</a>
+        <a href="/SYSARCH/user/history.php">History</a>
+        <a href="/SYSARCH/user/reservation.php" class="active">Reservation</a>
+        <a href="/SYSARCH/landingpage.php" class="btn-logout">Log out</a>
     </div>
 </div>
 

@@ -29,7 +29,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
             $_SESSION["admin_name"]    = "Administrator";
             $_SESSION["logged_in"]     = true;
             $_SESSION["role"]          = "admin";
-            header("Location: admin_home.php");
+            header("Location: admin/admin_home.php");
             exit();
         }
 
@@ -52,7 +52,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
                 $_SESSION["year_level"]        = $student["CourseLvl"];
                 $_SESSION["sessions_remaining"] = $student["Sessions"] ?? 28;
 
-                header("Location: user_home.php");
+                header("Location: user/user_home.php");
                 exit();
             } else {
                 $error = "Invalid ID Number or Password.";

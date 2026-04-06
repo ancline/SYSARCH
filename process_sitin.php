@@ -24,7 +24,7 @@ $lab              = trim($_POST['lab']              ?? '');
 $remaining_session = trim($_POST['remaining_session'] ?? '');
 
 if (empty($student_id) || empty($purpose) || empty($lab)) {
-    header('Location: admin_SitIn.php?error=missing_fields');
+    header('Location: admin/admin_SitIn.php?error=missing_fields');
     exit();
 }
 
@@ -37,7 +37,7 @@ $student = $result->fetch_assoc();
 $stmt->close();
 
 if (!$student) {
-    header('Location: admin_SitIn.php?error=student_not_found');
+    header('Location: admin/admin_SitIn.php?error=student_not_found');
     exit();
 }
 
@@ -53,7 +53,7 @@ $check->execute();
 $check->store_result();
 if ($check->num_rows > 0) {
     $check->close();
-    header('Location: admin_SitIn.php?error=already_sitin');
+    header('Location: admin/admin_SitIn.php?error=already_sitin');
     exit();
 }
 $check->close();
@@ -84,7 +84,7 @@ if ($current_sessions > 0) {
         $store_sessions = $assigned;
     } else {
         // No sessions — can't sit in
-        header('Location: admin_SitIn.php?error=no_sessions');
+        header('Location: admin/admin_SitIn.php?error=no_sessions');
         exit();
     }
 }
@@ -102,8 +102,8 @@ $conn->close();
 
 if ($success) {
     // ── Redirect to admin_SitIn.php showing active sit-ins ──
-    header('Location: admin_SitIn.php?success=1');
+    header('Location: admin/admin_SitIn.php?success=1');
 } else {
-    header('Location: admin_SitIn.php?error=insert_failed');
+    header('Location: admin/admin_SitIn.php?error=insert_failed');
 }
 exit();

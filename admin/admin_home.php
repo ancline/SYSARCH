@@ -469,20 +469,20 @@ $conn->close();
 <!-- NAVBAR -->
 <div class="navbar">
     <div class="nav-left">
-        <img src="uclogo-removebg-preview.png" alt="UC Logo">
+        <img src="/SYSARCH/uclogo-removebg-preview.png" alt="UC Logo">
         <div class="nav-divider"></div>
         <div class="nav-title">College of Computer Studies<br>Sit-in Monitoring System</div>
     </div>
     <div class="nav-links">
-        <a href="admin_home.php" class="active">Home ▾</a>
-        <a href="admin_search.php">Search</a>
-        <a href="admin_Student.php">Students</a>
-        <a href="admin_SitIn.php">Sit-in</a>
-        <a href="admin_ViewSitInRecords.php">View Sit-in Records</a>
-        <a href="admin_SitInReports.php">Sit-in Reports</a>
+        <a href="/SYSARCH/admin/admin_home.php" class="active">Home ▾</a>
+        <a href="/SYSARCH/admin/admin_search.php">Search</a>
+        <a href="/SYSARCH/admin/admin_Student.php">Students</a>
+        <a href="/SYSARCH/admin/admin_SitIn.php">Sit-in</a>
+        <a href="/SYSARCH/admin/admin_ViewSitInRecords.php">View Sit-in Records</a>
+        <a href="/SYSARCH/admin/admin_SitInReports.php">Sit-in Reports</a>
         <a href="#">Feedback Reports</a>
-        <a href="admin_reservation.php">Reservation</a>
-        <a href="landingpage.php" class="btn-logout">Log out</a>
+        <a href="/SYSARCH/admin/admin_reservation.php">Reservation</a>
+        <a href="/SYSARCH/landingpage.php" class="btn-logout">Log out</a>
     </div>
 </div>
 
