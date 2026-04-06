@@ -16,18 +16,6 @@ if ($conn->connect_error) {
     die("Connection failed: " . $conn->connect_error);
 }
 
-// ── AUTO-CREATE notifications table if missing ──
-$conn->query("
-    CREATE TABLE IF NOT EXISTS notifications (
-        id          INT AUTO_INCREMENT PRIMARY KEY,
-        student_id  VARCHAR(50) NULL,
-        title       VARCHAR(255) NOT NULL,
-        message     TEXT NOT NULL,
-        is_read     TINYINT(1) DEFAULT 0,
-        created_at  DATETIME DEFAULT CURRENT_TIMESTAMP
-    )
-");
-
 // Fetch sessions remaining from student table
 $sessions_remaining = 0;
 $stmt = $conn->prepare("SELECT sessions FROM student WHERE IdNumber = ?");
@@ -56,29 +44,29 @@ if ($ann_check && $ann_check->num_rows > 0) {
     }
 }
 
-// Fetch notifications for this student
-// Tries a `notifications` table; gracefully falls back if missing
+// Fetch notifications FROM announcements table
 $notifications = [];
-$notif_check = $conn->query("SHOW TABLES LIKE 'notifications'");
+$notif_check = $conn->query("SHOW TABLES LIKE 'announcements'");
 if ($notif_check && $notif_check->num_rows > 0) {
-    $nstmt = $conn->prepare("
-        SELECT title, message, created_at, is_read
-        FROM notifications
-        WHERE student_id = ? OR student_id IS NULL
+    $nr = $conn->query("
+        SELECT 
+            admin_name  AS title,
+            message,
+            created_at,
+            0           AS is_read
+        FROM announcements
         ORDER BY created_at DESC
         LIMIT 20
     ");
-    $nstmt->bind_param('s', $_SESSION['student_id']);
-    $nstmt->execute();
-    $nr = $nstmt->get_result();
-    while ($nrow = $nr->fetch_assoc()) {
-        $notifications[] = $nrow;
+    if ($nr) {
+        while ($nrow = $nr->fetch_assoc()) {
+            $notifications[] = $nrow;
+        }
     }
-    $nstmt->close();
 }
 
-// Unread count
-$unread_count = count(array_filter($notifications, fn($n) => empty($n['is_read'])));
+// All announcements treated as unread (no per-student read tracking)
+$unread_count = count($notifications);
 
 $conn->close();
 ?>
@@ -598,11 +586,11 @@ $conn->close();
                         <div class="notif-item <?= $is_unread ? 'unread' : '' ?>">
                             <div class="notif-item-inner">
                                 <div class="notif-icon-wrap">
-                                    <?= $is_unread ? '📬' : '📭' ?>
+                                    <?= $is_unread ? '📣' : '📭' ?>
                                 </div>
                                 <div class="notif-content">
                                     <div class="notif-item-title">
-                                        <?= htmlspecialchars($n['title'] ?? 'Notification') ?>
+                                        <?= htmlspecialchars($n['title'] ?? 'Announcement') ?>
                                     </div>
                                     <div class="notif-item-msg">
                                         <?= htmlspecialchars($n['message'] ?? '') ?>
@@ -805,9 +793,8 @@ $conn->close();
         if (e.key === 'Escape') closeNotif();
     });
 
-    // ── Mark all read ──
+    // ── Mark all read (visual only — announcements have no per-student read state) ──
     function markAllRead() {
-        // Visual update: remove unread styling on all items
         document.querySelectorAll('.notif-item.unread').forEach(function(el) {
             el.classList.remove('unread');
             const icon = el.querySelector('.notif-icon-wrap');
@@ -816,16 +803,8 @@ $conn->close();
             if (dot) dot.remove();
         });
 
-        // Hide badge
         const badge = document.getElementById('notifBadge');
         if (badge) badge.classList.add('hidden');
-
-        // AJAX call to mark all as read server-side
-        fetch('mark_notifications_read.php', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ student_id: '<?= htmlspecialchars($_SESSION['student_id']) ?>' })
-        }).catch(function() { /* silent fail — visual already updated */ });
     }
 </script>
 

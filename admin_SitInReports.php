@@ -371,57 +371,7 @@ $conn->close();
         </div>
     </div>
 
-    <div class="stat-strip">
-        <div class="stat-card">
-            <div class="stat-icon">📋</div>
-            <div>
-                <div class="stat-value"><?= $total_records ?></div>
-                <div class="stat-label">Total Records</div>
-            </div>
-        </div>
-        <div class="stat-card">
-            <div class="stat-icon">🖥️</div>
-            <div>
-                <div class="stat-value"><?= count(array_filter($records, fn($r) => $r['time_out'] === null)) ?></div>
-                <div class="stat-label">Currently Active</div>
-            </div>
-        </div>
-        <div class="stat-card">
-            <div class="stat-icon">✅</div>
-            <div>
-                <div class="stat-value"><?= count(array_filter($records, fn($r) => $r['time_out'] !== null)) ?></div>
-                <div class="stat-label">Completed</div>
-            </div>
-        </div>
-        <div class="stat-card">
-            <div class="stat-icon">⏱️</div>
-            <div>
-                <div class="stat-value"><?= $avg_duration ?>m</div>
-                <div class="stat-label">Avg. Duration</div>
-            </div>
-        </div>
-    </div>
-
-    <div class="charts-grid">
-        <div class="card">
-            <div class="card-header"><div class="hicon">🎯</div> By Purpose</div>
-            <div class="card-body">
-                <div class="chart-wrap"><canvas id="chartPurpose"></canvas></div>
-            </div>
-        </div>
-        <div class="card">
-            <div class="card-header"><div class="hicon">📅</div> Daily Trend (14 days)</div>
-            <div class="card-body">
-                <div class="chart-wrap"><canvas id="chartDaily"></canvas></div>
-            </div>
-        </div>
-        <div class="card">
-            <div class="card-header"><div class="hicon">🏫</div> Lab Utilization</div>
-            <div class="card-body">
-                <div class="chart-wrap"><canvas id="chartLab"></canvas></div>
-            </div>
-        </div>
-    </div>
+    
 
     <div class="card no-print">
         <div class="card-header"><div class="hicon">🔍</div> Filter Records</div>
