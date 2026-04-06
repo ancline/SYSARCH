@@ -154,7 +154,6 @@ $conn->close();
             margin-bottom: 22px; gap: 12px; flex-wrap: wrap;
         }
 
-        .page-header-left {}
 
         .breadcrumb {
             font-size: 12px; color: var(--muted); font-weight: 500;
