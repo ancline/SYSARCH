@@ -51,24 +51,54 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             if (!$srow || (int)$srow['sessions'] <= 0) {
                 $error_msg = 'You have no sessions remaining. Cannot make a reservation.';
             } else {
-                // Prevent duplicate pending reservation for same slot
-                $chk = $conn->prepare("SELECT id FROM reservations WHERE student_id = ? AND date = ? AND time_slot = ? AND status = 'pending'");
-                $chk->bind_param('sss', $student_id, $date, $time_slot);
-                $chk->execute();
-                $chk->store_result();
-                if ($chk->num_rows > 0) {
-                    $error_msg = 'You already have a pending reservation for that date and time slot.';
+                // ── SERVER-SIDE: Verify the lab is admin-configured, active, and has available PCs ──
+                $lab_check = $conn->prepare("
+                    SELECT id FROM configured_labs
+                    WHERE lab_name = ? AND is_active = 1 AND pc_status_set = 1
+                ");
+                $lab_check->bind_param('s', $lab);
+                $lab_check->execute();
+                $lab_check->store_result();
+
+                if ($lab_check->num_rows === 0) {
+                    $error_msg = 'That laboratory is not currently open for reservations.';
+                    $lab_check->close();
                 } else {
-                    $ins = $conn->prepare("INSERT INTO reservations (student_id, student_name, lab, purpose, date, time_slot) VALUES (?, ?, ?, ?, ?, ?)");
-                    $ins->bind_param('ssssss', $student_id, $student_name, $lab, $purpose, $date, $time_slot);
-                    if ($ins->execute()) {
-                        $success_msg = 'Reservation submitted successfully! Please wait for admin approval.';
+                    $lab_check->close();
+
+                    // Check at least one PC is available
+                    $avail_check = $conn->prepare("
+                        SELECT COUNT(*) FROM lab_pc_status WHERE lab = ? AND status = 'available'
+                    ");
+                    $avail_check->bind_param('s', $lab);
+                    $avail_check->execute();
+                    $avail_check->bind_result($avail_pc_count);
+                    $avail_check->fetch();
+                    $avail_check->close();
+
+                    if ((int)$avail_pc_count < 1) {
+                        $error_msg = 'No PCs are currently available in that laboratory.';
                     } else {
-                        $error_msg = 'Failed to submit reservation. Please try again.';
+                        // Prevent duplicate pending reservation for same slot
+                        $chk = $conn->prepare("SELECT id FROM reservations WHERE student_id = ? AND date = ? AND time_slot = ? AND status = 'pending'");
+                        $chk->bind_param('sss', $student_id, $date, $time_slot);
+                        $chk->execute();
+                        $chk->store_result();
+                        if ($chk->num_rows > 0) {
+                            $error_msg = 'You already have a pending reservation for that date and time slot.';
+                        } else {
+                            $ins = $conn->prepare("INSERT INTO reservations (student_id, student_name, lab, purpose, date, time_slot) VALUES (?, ?, ?, ?, ?, ?)");
+                            $ins->bind_param('ssssss', $student_id, $student_name, $lab, $purpose, $date, $time_slot);
+                            if ($ins->execute()) {
+                                $success_msg = 'Reservation submitted successfully! Please wait for admin approval.';
+                            } else {
+                                $error_msg = 'Failed to submit reservation. Please try again.';
+                            }
+                            $ins->close();
+                        }
+                        $chk->close();
                     }
-                    $ins->close();
                 }
-                $chk->close();
             }
         } else {
             $error_msg = 'Please fill in all fields.';
@@ -392,6 +422,13 @@ $conn->close();
             text-align: right; margin-top: -4px;
         }
 
+        /* Lab loading state */
+        .lab-load-msg {
+            font-size: 11.5px; margin-top: 4px; display: none;
+        }
+        .lab-load-msg.warning { color: var(--orange); }
+        .lab-load-msg.error   { color: var(--red); }
+
         /* Time slots grid */
         .slot-grid {
             display: grid;
@@ -708,18 +745,13 @@ $conn->close();
                     </div>
                 </div>
 
-                <!-- Laboratory -->
+                <!-- Laboratory — dynamically loaded from admin config -->
                 <div class="form-group">
                     <label><span class="licon">🏛️</span> Laboratory</label>
-                    <select name="lab" required <?= $sessions_remaining <= 0 ? 'disabled' : '' ?>>
-                        <option value="" disabled selected>Select a laboratory…</option>
-                        <option value="Lab 524">Lab 524</option>
-                        <option value="Lab 526">Lab 526</option>
-                        <option value="Lab 528">Lab 528</option>
-                        <option value="Lab 530">Lab 530</option>
-                        <option value="Mac Lab">Mac Lab</option>
-                        <option value="542">Lab 542</option>
+                    <select name="lab" id="labSelect" required <?= $sessions_remaining <= 0 ? 'disabled' : '' ?>>
+                        <option value="" disabled selected>Loading available labs…</option>
                     </select>
+                    <div class="lab-load-msg" id="labLoadMsg"></div>
                 </div>
 
                 <!-- Purpose -->
@@ -762,7 +794,7 @@ $conn->close();
                     </div>
                 </div>
 
-                <button type="submit" class="btn-submit" <?= $sessions_remaining <= 0 ? 'disabled' : '' ?>>
+                <button type="submit" class="btn-submit" id="submitBtn" <?= $sessions_remaining <= 0 ? 'disabled' : '' ?>>
                     📅 Submit Reservation
                 </button>
             </form>
@@ -845,6 +877,55 @@ $conn->close();
 </div><!-- /page-wrap -->
 
 <script>
+    // ── Dynamically load labs from admin configuration ──
+    // Only labs where the admin has set pc_status_set=1 AND has at least 1 available PC
+    // will be returned by the endpoint. Students cannot see or select any other lab.
+    async function loadConfiguredLabs() {
+        const sel = document.getElementById('labSelect');
+        const msg = document.getElementById('labLoadMsg');
+        const submitBtn = document.getElementById('submitBtn');
+        if (!sel) return;
+
+        try {
+            const res = await fetch('/SYSARCH/admin/admin_reservation.php?ajax=get_configured_labs');
+            const data = await res.json();
+
+            sel.innerHTML = '<option value="" disabled selected>Select a laboratory…</option>';
+
+            if (!data.success || !data.labs || data.labs.length === 0) {
+                sel.innerHTML = '<option value="" disabled selected>No labs available for reservation</option>';
+                sel.disabled = true;
+                msg.textContent = 'No laboratories are currently open for reservation. Please check back later or contact the admin.';
+                msg.className = 'lab-load-msg warning';
+                msg.style.display = 'block';
+                // Disable submit if no sessions were already blocking it
+                if (submitBtn && !submitBtn.disabled) submitBtn.disabled = true;
+                return;
+            }
+
+            data.labs.forEach(lab => {
+                const opt = document.createElement('option');
+                opt.value = lab.name;
+                opt.textContent = lab.name + '  (' + lab.available + ' PC' + (lab.available !== 1 ? 's' : '') + ' available)';
+                sel.appendChild(opt);
+            });
+
+            msg.style.display = 'none';
+
+        } catch (e) {
+            sel.innerHTML = '<option value="" disabled selected>Failed to load labs — please refresh</option>';
+            sel.disabled = true;
+            msg.textContent = 'Could not load lab list. Please refresh the page.';
+            msg.className = 'lab-load-msg error';
+            msg.style.display = 'block';
+        }
+    }
+
+    // Only fetch labs if the student has sessions remaining
+    <?php if ($sessions_remaining > 0): ?>
+    loadConfiguredLabs();
+    <?php endif; ?>
+
     // Character counter for purpose textarea
     const ta = document.getElementById('purposeTA');
     const cnt = document.getElementById('purposeCount');
