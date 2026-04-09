@@ -41,9 +41,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
 
     if ($_POST['action'] === 'reserve') {
         $lab       = trim($_POST['lab'] ?? '');
-        $purpose   = trim($_POST['purpose'] ?? '');
         $date      = trim($_POST['date'] ?? '');
         $time_slot = trim($_POST['time_slot'] ?? '');
+
+        // Resolve purpose: use custom if "other" was selected
+        $purpose_sel = trim($_POST['purpose'] ?? '');
+        $purpose_custom = trim($_POST['purpose_custom'] ?? '');
+        $purpose = ($purpose_sel === 'other') ? $purpose_custom : $purpose_sel;
 
         if ($lab && $purpose && $date && $time_slot) {
             // Check sessions remaining
@@ -133,9 +137,9 @@ while ($row = $rr->fetch_assoc()) {
 $rres->close();
 
 // ── Stats ──
-$total_res   = count($reservations);
-$pending_res = count(array_filter($reservations, fn($r) => $r['status'] === 'pending'));
-$approved_res= count(array_filter($reservations, fn($r) => $r['status'] === 'approved'));
+$total_res    = count($reservations);
+$pending_res  = count(array_filter($reservations, fn($r) => $r['status'] === 'pending'));
+$approved_res = count(array_filter($reservations, fn($r) => $r['status'] === 'approved'));
 
 // ── Sessions remaining ──
 $sessions_remaining = 0;
@@ -158,12 +162,29 @@ if ($notif_check && $notif_check->num_rows > 0) {
     $nstmt->close();
 }
 
-// Min date = tomorrow
+// Min date = tomorrow | Max date = 30 days from now
 $min_date = date('Y-m-d', strtotime('+1 day'));
-// Max date = 30 days from now
 $max_date = date('Y-m-d', strtotime('+30 days'));
 
 $conn->close();
+
+// ── Purpose options ──
+$purpose_options = [
+    'C Programming'            => 'C Programming',
+    'Java Programming'         => 'Java Programming',
+    'Python Programming'       => 'Python Programming',
+    'Web Development'          => 'Web Development',
+    'Database (SQL / MySQL)'   => 'Database (SQL / MySQL)',
+    'Data Structures'          => 'Data Structures',
+    'Algorithms & Problem Solving' => 'Algorithms & Problem Solving',
+    'Networking Lab'           => 'Networking Lab',
+    'Operating Systems'        => 'Operating Systems',
+    'Software Engineering'     => 'Software Engineering',
+    'Thesis / Capstone Project' => 'Thesis / Capstone Project',
+    'Research & Study'         => 'Research & Study',
+    'Online Class / E-learning' => 'Online Class / E-learning',
+    'other'                    => '✏️ Other (specify)…',
+];
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -390,6 +411,7 @@ $conn->close();
 
         .form-group select,
         .form-group input[type="date"],
+        .form-group input[type="text"],
         .form-group textarea {
             width: 100%;
             padding: 10px 13px;
@@ -405,21 +427,40 @@ $conn->close();
 
         .form-group select:focus,
         .form-group input[type="date"]:focus,
+        .form-group input[type="text"]:focus,
         .form-group textarea:focus {
             border-color: var(--accent);
             background: white;
             box-shadow: 0 0 0 3px rgba(59,111,212,0.12);
         }
 
-        .form-group textarea {
-            resize: vertical;
-            min-height: 90px;
-            line-height: 1.5;
+        /* Purpose custom input */
+        .purpose-custom-wrap {
+            display: none;
+            flex-direction: column;
+            gap: 5px;
+            animation: slideDown 0.18s ease;
+        }
+        .purpose-custom-wrap.visible { display: flex; }
+
+        .purpose-custom-wrap input {
+            border-color: var(--accent);
+            box-shadow: 0 0 0 3px rgba(59,111,212,0.10);
+        }
+
+        .purpose-custom-wrap .custom-hint {
+            font-size: 11px; color: var(--muted);
+            display: flex; align-items: center; justify-content: space-between;
+        }
+
+        @keyframes slideDown {
+            from { opacity: 0; transform: translateY(-6px); }
+            to   { opacity: 1; transform: translateY(0); }
         }
 
         .char-count {
             font-size: 11px; color: var(--muted);
-            text-align: right; margin-top: -4px;
+            text-align: right;
         }
 
         /* Lab loading state */
@@ -594,13 +635,8 @@ $conn->close();
 
         .modal-btns button:hover { opacity: 0.88; transform: translateY(-1px); }
 
-        .btn-confirm-cancel {
-            background: var(--red); color: white;
-        }
-
-        .btn-modal-close {
-            background: var(--tag-bg); color: var(--navy);
-        }
+        .btn-confirm-cancel { background: var(--red); color: white; }
+        .btn-modal-close    { background: var(--tag-bg); color: var(--navy); }
 
         @keyframes fadeUp {
             from { opacity: 0; transform: translateY(16px); }
@@ -728,7 +764,7 @@ $conn->close();
             </div>
             <?php endif; ?>
 
-            <form method="POST" class="form-body">
+            <form method="POST" class="form-body" onsubmit="return validateReservationForm()">
                 <input type="hidden" name="action" value="reserve">
 
                 <!-- Sessions remaining -->
@@ -745,7 +781,7 @@ $conn->close();
                     </div>
                 </div>
 
-                <!-- Laboratory — dynamically loaded from admin config -->
+                <!-- Laboratory -->
                 <div class="form-group">
                     <label><span class="licon">🏛️</span> Laboratory</label>
                     <select name="lab" id="labSelect" required <?= $sessions_remaining <= 0 ? 'disabled' : '' ?>>
@@ -754,11 +790,32 @@ $conn->close();
                     <div class="lab-load-msg" id="labLoadMsg"></div>
                 </div>
 
-                <!-- Purpose -->
+                <!-- Purpose — dropdown with "Other" fallback -->
                 <div class="form-group">
                     <label><span class="licon">📌</span> Purpose</label>
-                    <textarea name="purpose" maxlength="255" placeholder="e.g. Database coursework, Web development project…" required id="purposeTA" <?= $sessions_remaining <= 0 ? 'disabled' : '' ?>></textarea>
-                    <div class="char-count"><span id="purposeCount">0</span> / 255</div>
+                    <select name="purpose" id="purposeSelect" required
+                        <?= $sessions_remaining <= 0 ? 'disabled' : '' ?>
+                        onchange="handlePurposeChange(this)">
+                        <option value="" disabled selected>— Select a purpose —</option>
+                        <?php foreach ($purpose_options as $val => $label): ?>
+                        <option value="<?= htmlspecialchars($val) ?>"><?= htmlspecialchars($label) ?></option>
+                        <?php endforeach; ?>
+                    </select>
+
+                    <!-- Shown only when "Other" is selected -->
+                    <div class="purpose-custom-wrap" id="purposeCustomWrap">
+                        <input type="text"
+                            name="purpose_custom"
+                            id="purposeCustom"
+                            maxlength="255"
+                            placeholder="Describe your purpose…"
+                            <?= $sessions_remaining <= 0 ? 'disabled' : '' ?>
+                            oninput="updateCustomCount()">
+                        <div class="custom-hint">
+                            <span style="font-size:11px;color:var(--muted);">Briefly describe your purpose</span>
+                            <span class="char-count"><span id="customCount">0</span> / 255</span>
+                        </div>
+                    </div>
                 </div>
 
                 <!-- Date -->
@@ -877,108 +934,135 @@ $conn->close();
 </div><!-- /page-wrap -->
 
 <script>
-    // ── Dynamically load labs from admin configuration ──
-    // Only labs where the admin has set pc_status_set=1 AND has at least 1 available PC
-    // will be returned by the endpoint. Students cannot see or select any other lab.
-    async function loadConfiguredLabs() {
-        const sel = document.getElementById('labSelect');
-        const msg = document.getElementById('labLoadMsg');
-        const submitBtn = document.getElementById('submitBtn');
-        if (!sel) return;
+// ── Purpose dropdown: show/hide custom input ──────────────────────
+function handlePurposeChange(sel) {
+    const wrap   = document.getElementById('purposeCustomWrap');
+    const input  = document.getElementById('purposeCustom');
+    if (sel.value === 'other') {
+        wrap.classList.add('visible');
+        input.required = true;
+        input.focus();
+    } else {
+        wrap.classList.remove('visible');
+        input.required = false;
+        input.value = '';
+        document.getElementById('customCount').textContent = '0';
+    }
+}
 
-        try {
-            const res = await fetch('/SYSARCH/admin/admin_reservation.php?ajax=get_configured_labs');
-            const data = await res.json();
+function updateCustomCount() {
+    const input = document.getElementById('purposeCustom');
+    const cnt   = document.getElementById('customCount');
+    if (input && cnt) {
+        cnt.textContent = input.value.length;
+        cnt.style.color = input.value.length > 220 ? '#e53535' : '';
+    }
+}
 
-            sel.innerHTML = '<option value="" disabled selected>Select a laboratory…</option>';
-
-            if (!data.success || !data.labs || data.labs.length === 0) {
-                sel.innerHTML = '<option value="" disabled selected>No labs available for reservation</option>';
-                sel.disabled = true;
-                msg.textContent = 'No laboratories are currently open for reservation. Please check back later or contact the admin.';
-                msg.className = 'lab-load-msg warning';
-                msg.style.display = 'block';
-                // Disable submit if no sessions were already blocking it
-                if (submitBtn && !submitBtn.disabled) submitBtn.disabled = true;
-                return;
-            }
-
-            data.labs.forEach(lab => {
-                const opt = document.createElement('option');
-                opt.value = lab.name;
-                opt.textContent = lab.name + '  (' + lab.available + ' PC' + (lab.available !== 1 ? 's' : '') + ' available)';
-                sel.appendChild(opt);
-            });
-
-            msg.style.display = 'none';
-
-        } catch (e) {
-            sel.innerHTML = '<option value="" disabled selected>Failed to load labs — please refresh</option>';
-            sel.disabled = true;
-            msg.textContent = 'Could not load lab list. Please refresh the page.';
-            msg.className = 'lab-load-msg error';
-            msg.style.display = 'block';
+// ── Form validation ───────────────────────────────────────────────
+function validateReservationForm() {
+    const sel = document.getElementById('purposeSelect');
+    if (sel.value === 'other') {
+        const custom = document.getElementById('purposeCustom');
+        if (!custom.value.trim()) {
+            custom.style.borderColor = '#e53535';
+            custom.focus();
+            return false;
         }
+        custom.style.borderColor = '';
+        // Swap name so PHP receives the custom text as "purpose"
+        sel.name = '';
+        custom.name = 'purpose';
     }
+    return true;
+}
 
-    // Only fetch labs if the student has sessions remaining
-    <?php if ($sessions_remaining > 0): ?>
-    loadConfiguredLabs();
-    <?php endif; ?>
+// ── Dynamically load labs ─────────────────────────────────────────
+async function loadConfiguredLabs() {
+    const sel = document.getElementById('labSelect');
+    const msg = document.getElementById('labLoadMsg');
+    const submitBtn = document.getElementById('submitBtn');
+    if (!sel) return;
 
-    // Character counter for purpose textarea
-    const ta = document.getElementById('purposeTA');
-    const cnt = document.getElementById('purposeCount');
-    if (ta && cnt) {
-        ta.addEventListener('input', function() {
-            cnt.textContent = ta.value.length;
-            cnt.style.color = ta.value.length > 220 ? '#e53535' : '';
+    try {
+        const res  = await fetch('/SYSARCH/admin/admin_reservation.php?ajax=get_configured_labs');
+        const data = await res.json();
+
+        sel.innerHTML = '<option value="" disabled selected>Select a laboratory…</option>';
+
+        if (!data.success || !data.labs || data.labs.length === 0) {
+            sel.innerHTML = '<option value="" disabled selected>No labs available for reservation</option>';
+            sel.disabled  = true;
+            msg.textContent = 'No laboratories are currently open for reservation. Please check back later or contact the admin.';
+            msg.className   = 'lab-load-msg warning';
+            msg.style.display = 'block';
+            if (submitBtn && !submitBtn.disabled) submitBtn.disabled = true;
+            return;
+        }
+
+        data.labs.forEach(lab => {
+            const opt = document.createElement('option');
+            opt.value = lab.name;
+            opt.textContent = lab.name + '  (' + lab.available + ' PC' + (lab.available !== 1 ? 's' : '') + ' available)';
+            sel.appendChild(opt);
         });
-    }
 
-    // Cancel modal
-    function openCancelModal(id) {
-        document.getElementById('cancelResId').value = id;
-        document.getElementById('cancelModal').classList.add('open');
-    }
+        msg.style.display = 'none';
 
-    function closeModal() {
-        document.getElementById('cancelModal').classList.remove('open');
+    } catch (e) {
+        sel.innerHTML = '<option value="" disabled selected>Failed to load labs — please refresh</option>';
+        sel.disabled  = true;
+        msg.textContent = 'Could not load lab list. Please refresh the page.';
+        msg.className   = 'lab-load-msg error';
+        msg.style.display = 'block';
     }
+}
 
-    // Close modal on overlay click
-    document.getElementById('cancelModal').addEventListener('click', function(e) {
-        if (e.target === this) closeModal();
+<?php if ($sessions_remaining > 0): ?>
+loadConfiguredLabs();
+<?php endif; ?>
+
+// ── Cancel modal ──────────────────────────────────────────────────
+function openCancelModal(id) {
+    document.getElementById('cancelResId').value = id;
+    document.getElementById('cancelModal').classList.add('open');
+}
+
+function closeModal() {
+    document.getElementById('cancelModal').classList.remove('open');
+}
+
+document.getElementById('cancelModal').addEventListener('click', function(e) {
+    if (e.target === this) closeModal();
+});
+
+document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') closeModal();
+});
+
+// ── Auto-dismiss alerts ───────────────────────────────────────────
+document.querySelectorAll('.alert').forEach(function(el) {
+    setTimeout(function() {
+        el.style.transition = 'opacity 0.4s';
+        el.style.opacity    = '0';
+        setTimeout(function() { el.style.display = 'none'; }, 400);
+    }, 5000);
+});
+
+// ── Block past dates ──────────────────────────────────────────────
+const dateInput = document.querySelector('input[type="date"]');
+if (dateInput) {
+    dateInput.addEventListener('change', function() {
+        const chosen = new Date(this.value);
+        const today  = new Date();
+        today.setHours(0, 0, 0, 0);
+        if (chosen <= today) {
+            this.setCustomValidity('Please choose a future date.');
+        } else {
+            this.setCustomValidity('');
+        }
     });
-
-    // Escape key
-    document.addEventListener('keydown', function(e) {
-        if (e.key === 'Escape') closeModal();
-    });
-
-    // Auto-dismiss alerts after 5 seconds
-    document.querySelectorAll('.alert').forEach(function(el) {
-        setTimeout(function() {
-            el.style.transition = 'opacity 0.4s';
-            el.style.opacity = '0';
-            setTimeout(function() { el.style.display = 'none'; }, 400);
-        }, 5000);
-    });
-
-    // Block past dates on the date input (extra client-side guard)
-    const dateInput = document.querySelector('input[type="date"]');
-    if (dateInput) {
-        dateInput.addEventListener('change', function() {
-            const chosen = new Date(this.value);
-            const today  = new Date();
-            today.setHours(0, 0, 0, 0);
-            if (chosen <= today) {
-                this.setCustomValidity('Please choose a future date.');
-            } else {
-                this.setCustomValidity('');
-            }
-        });
-    }
+}
 </script>
 
 </body>

@@ -98,10 +98,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['ajax']) && $_POST['aj
     if ($total_pcs > 200) $total_pcs = 200;
 
     if ($lab && is_array($statuses)) {
-        // Mark pc_status_set = 1 since admin has now configured PCs
         $conn->query("UPDATE configured_labs SET total_pcs=$total_pcs, pc_status_set=1, updated_at=NOW() WHERE lab_name='$lab'");
-
-        // Delete old PC rows beyond new total
         $conn->query("DELETE FROM lab_pc_status WHERE lab='$lab' AND pc_number > $total_pcs");
 
         foreach ($statuses as $pc_num => $status) {
@@ -113,7 +110,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['ajax']) && $_POST['aj
             }
         }
 
-        // Count available PCs after save
         $avail_count = (int)$conn->query("SELECT COUNT(*) AS c FROM lab_pc_status WHERE lab='$lab' AND status='available'")->fetch_assoc()['c'];
         echo json_encode(['success' => true, 'available_pcs' => $avail_count]);
     } else {
@@ -123,8 +119,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['ajax']) && $_POST['aj
     exit();
 }
 
-// ── AJAX: Get configured labs (for student reservation form) ──
-// IMPORTANT: Only returns labs that have pc_status_set=1 AND have at least 1 available PC
+// ── AJAX: Get configured labs ──
 if (isset($_GET['ajax']) && $_GET['ajax'] === 'get_configured_labs') {
     header('Content-Type: application/json');
     $result = $conn->query("SELECT lab_name, total_pcs FROM configured_labs WHERE is_active=1 AND pc_status_set=1 ORDER BY lab_name");
@@ -133,7 +128,6 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === 'get_configured_labs') {
         while ($row = $result->fetch_assoc()) {
             $lab_esc = $conn->real_escape_string($row['lab_name']);
             $avail = (int)$conn->query("SELECT COUNT(*) AS c FROM lab_pc_status WHERE lab='$lab_esc' AND status='available'")->fetch_assoc()['c'];
-            // Only expose labs with at least 1 available PC
             if ($avail > 0) {
                 $labs_out[] = [
                     'name'      => $row['lab_name'],
@@ -148,12 +142,11 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === 'get_configured_labs') {
     exit();
 }
 
-// ── AJAX: Get available PCs for a specific lab (for student PC picker) ──
+// ── AJAX: Get available PCs for a specific lab ──
 if (isset($_GET['ajax']) && $_GET['ajax'] === 'get_available_pcs' && isset($_GET['lab'])) {
     header('Content-Type: application/json');
     $lab = $conn->real_escape_string($_GET['lab']);
 
-    // Verify lab is active and pc_status_set
     $lab_row = $conn->query("SELECT id FROM configured_labs WHERE lab_name='$lab' AND is_active=1 AND pc_status_set=1")->fetch_assoc();
     if (!$lab_row) {
         echo json_encode(['success' => false, 'error' => 'Lab not available for reservation.']);
@@ -194,12 +187,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
     }
 
     if ($_POST['action'] === 'add_lab') {
-        $lab_name  = trim($conn->real_escape_string($_POST['lab_name'] ?? ''));
+        // Use custom name if "other" was selected
+        $lab_name_raw = $_POST['lab_name'] ?? '';
+        if ($lab_name_raw === 'other') {
+            $lab_name_raw = $_POST['lab_name_custom'] ?? '';
+        }
+        $lab_name  = trim($conn->real_escape_string($lab_name_raw));
         $total_pcs = (int)($_POST['total_pcs'] ?? 50);
         if ($total_pcs < 1)   $total_pcs = 1;
         if ($total_pcs > 200) $total_pcs = 200;
         if ($lab_name) {
-            // pc_status_set defaults to 0 — admin must configure PCs before students can reserve
             $r = $conn->query("INSERT INTO configured_labs (lab_name, total_pcs, pc_status_set) VALUES ('$lab_name', $total_pcs, 0)");
             if ($r) {
                 $success_msg = "Lab \"$lab_name\" added. ⚠️ Remember to set PC statuses before students can reserve!";
@@ -256,7 +253,6 @@ $pending_res  = $conn->query("SELECT COUNT(*) AS c FROM reservations WHERE statu
 $approved_res = $conn->query("SELECT COUNT(*) AS c FROM reservations WHERE status='approved'")->fetch_assoc()['c'] ?? 0;
 $rejected_res = $conn->query("SELECT COUNT(*) AS c FROM reservations WHERE status='rejected'")->fetch_assoc()['c'] ?? 0;
 
-// Configured labs — now also fetches pc_status_set
 $configured_labs = [];
 $clr = $conn->query("SELECT * FROM configured_labs ORDER BY lab_name");
 if ($clr) while ($row = $clr->fetch_assoc()) {
@@ -266,10 +262,8 @@ if ($clr) while ($row = $clr->fetch_assoc()) {
     $configured_labs[]    = $row;
 }
 
-// Count labs that need PC setup
 $labs_needing_setup = array_filter($configured_labs, fn($l) => !$l['pc_status_set'] && $l['is_active']);
 
-// Reservations with filters
 $filter_status = $_GET['status'] ?? '';
 $filter_lab    = $_GET['lab']    ?? '';
 $search        = $_GET['search'] ?? '';
@@ -289,7 +283,17 @@ $res_labs = [];
 $lr = $conn->query("SELECT DISTINCT lab FROM reservations ORDER BY lab");
 if ($lr) while ($row = $lr->fetch_assoc()) $res_labs[] = $row['lab'];
 
+// Fetch already-configured lab names for dropdown exclusion
+$existing_lab_names = array_column($configured_labs, 'lab_name');
+
 $conn->close();
+
+// All possible lab name options
+$all_lab_options = [
+    'Lab 524','Lab 526','Lab 527','Lab 528','Lab 530','Mac Lab'
+];
+// Filter out labs already added
+$available_lab_options = array_diff($all_lab_options, $existing_lab_names);
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -465,6 +469,7 @@ $conn->close();
         }
         .add-lab-form .field { display: flex; flex-direction: column; gap: 5px; }
         .add-lab-form label { font-size: 11px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.4px; }
+        .add-lab-form select,
         .add-lab-form input[type="text"],
         .add-lab-form input[type="number"] {
             height: 36px; padding: 0 12px;
@@ -472,10 +477,31 @@ $conn->close();
             font-size: 13px; font-family: 'DM Sans', sans-serif;
             color: var(--text); outline: none;
             transition: border-color 0.18s, box-shadow 0.18s;
+            background: white;
         }
+        .add-lab-form select { width: 220px; cursor: pointer; }
         .add-lab-form input[type="text"] { width: 220px; }
         .add-lab-form input[type="number"] { width: 100px; }
+        .add-lab-form select:focus,
         .add-lab-form input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(59,111,212,0.1); }
+
+        /* Custom name input reveal */
+        .custom-name-wrap {
+            display: none; flex-direction: column; gap: 5px;
+        }
+        .custom-name-wrap.visible { display: flex; }
+        .custom-name-wrap label { font-size: 11px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.4px; }
+        .custom-name-wrap input {
+            height: 36px; padding: 0 12px; width: 220px;
+            border: 1px solid var(--accent); border-radius: 8px;
+            font-size: 13px; font-family: 'DM Sans', sans-serif;
+            color: var(--text); outline: none;
+            box-shadow: 0 0 0 3px rgba(59,111,212,0.1);
+            background: white;
+            animation: slideDown 0.18s ease;
+        }
+        @keyframes slideDown { from { opacity:0; transform:translateY(-4px); } to { opacity:1; transform:translateY(0); } }
+
         .btn-add-lab {
             height: 36px; padding: 0 20px; border: none; border-radius: 8px;
             background: linear-gradient(135deg, var(--navy), var(--navy-light));
@@ -492,9 +518,17 @@ $conn->close();
             display: flex; align-items: center; gap: 6px;
         }
 
+        /* No options left notice */
+        .no-labs-notice {
+            width: 100%; font-size: 12px; color: var(--green);
+            background: var(--green-light); border: 1px solid #b2e8cc;
+            border-radius: 7px; padding: 8px 14px;
+            display: flex; align-items: center; gap: 6px; font-weight: 600;
+        }
+
         /* Lab grid */
         .lab-grid {
-            display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+            display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
             gap: 14px;
         }
         .lab-config-card {
@@ -507,7 +541,6 @@ $conn->close();
         .lab-config-card:hover { transform: translateY(-2px); box-shadow: 0 6px 18px rgba(15,38,83,0.12); }
         .lab-config-card.inactive { opacity: 0.55; }
 
-        /* PC setup required indicator */
         .pc-setup-required-badge {
             position: absolute; top: 10px; right: 10px;
             background: linear-gradient(135deg, #f59e0b, #d97706);
@@ -529,7 +562,6 @@ $conn->close();
             text-transform: uppercase; letter-spacing: 0.5px;
         }
 
-        /* "Needs PC setup" overlay on card */
         .lab-config-card.needs-setup {
             border-color: #fcd34d;
             box-shadow: 0 2px 10px rgba(245,158,11,0.15);
@@ -563,17 +595,15 @@ $conn->close();
         .lab-card-name {
             font-size: 14px; font-weight: 700; color: var(--navy);
             white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-            padding-right: 80px; /* space for badge */
+            padding-right: 80px;
         }
         .lab-card-meta { font-size: 11.5px; color: var(--muted); margin-top: 3px; }
 
-        /* PC bar */
         .pc-availability-bar {
             margin: 0 16px 10px; height: 7px; background: #eef1f8;
             border-radius: 10px; overflow: hidden;
         }
         .pc-bar-fill { height: 100%; border-radius: 10px; background: linear-gradient(90deg, #22c55e, #16a34a); transition: width 0.4s; }
-        .pc-bar-fill.not-set { background: linear-gradient(90deg, #d1d5db, #9ca3af); }
 
         .lab-pc-counts {
             display: flex; gap: 12px; padding: 0 16px 10px;
@@ -585,7 +615,6 @@ $conn->close();
         .pc-count-chip.avail { background: #edfaf3; color: #1a7a4a; }
         .pc-count-chip.inuse { background: #fff8e1; color: #c07000; }
         .pc-count-chip.total { background: var(--tag-bg); color: var(--navy-light); }
-        .pc-count-chip.not-set { background: #f3f4f6; color: #6b7280; }
 
         .lab-card-footer {
             border-top: 1px solid var(--border);
@@ -628,17 +657,6 @@ $conn->close();
         .empty-labs .el-icon { font-size: 40px; margin-bottom: 10px; opacity: 0.4; }
         .empty-labs h3 { font-size: 14px; font-weight: 700; color: var(--navy); margin-bottom: 4px; }
         .empty-labs p  { font-size: 13px; }
-
-        /* ── RESERVATION READINESS INDICATOR ── */
-        .readiness-strip {
-            display: flex; align-items: center; gap: 10px;
-            padding: 10px 18px; background: #f0fdf4;
-            border-bottom: 1px solid #bbf7d0;
-            font-size: 12px; color: var(--green); font-weight: 600;
-        }
-        .readiness-strip.has-issues {
-            background: #fffbeb; border-color: #fde68a; color: var(--amber);
-        }
 
         /* ── FILTER BAR ── */
         .filter-bar {
@@ -852,7 +870,6 @@ $conn->close();
         }
         .pc-modal-close:hover { background: rgba(255,255,255,0.25); }
 
-        /* First-time setup notice inside PC modal */
         .pc-first-setup-notice {
             background: linear-gradient(135deg, #fffbeb, #fef3c7);
             border-bottom: 1px solid #fde68a;
@@ -865,7 +882,6 @@ $conn->close();
 
         .pc-modal-body { padding: 20px 24px; overflow-y: auto; flex: 1; }
 
-        /* PC count control */
         .pc-count-control {
             display: flex; align-items: center; gap: 12px;
             background: var(--bg); border: 1px solid var(--border);
@@ -888,7 +904,6 @@ $conn->close();
         .btn-apply-count:hover { opacity: 0.85; }
         .pc-count-note { font-size: 11.5px; color: var(--muted); margin-left: auto; }
 
-        /* Legend */
         .pc-legend {
             display: flex; gap: 16px; flex-wrap: wrap;
             margin-bottom: 18px; padding: 12px 16px;
@@ -907,7 +922,6 @@ $conn->close();
         .legend-dot.in_use      { background: #f59e0b; }
         .pc-legend-note { margin-left: auto; font-size: 11px; color: var(--muted); display: flex; align-items: center; font-weight: 400; }
 
-        /* Stats row */
         .pc-stats { display: flex; gap: 10px; margin-bottom: 18px; }
         .pc-stat-chip { flex: 1; text-align: center; padding: 10px 8px; border-radius: 10px; border: 1px solid var(--border); }
         .pc-stat-chip .cs-value { font-size: 22px; font-weight: 700; line-height: 1; margin-bottom: 3px; }
@@ -922,7 +936,6 @@ $conn->close();
         .pc-stat-chip.in_use      .cs-value { color: #d97706; }
         .pc-stat-chip.in_use      .cs-label { color: #fbbf24; }
 
-        /* PC Grid */
         .pc-grid-label { font-size: 11px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 10px; }
         .pc-grid { display: grid; grid-template-columns: repeat(10, 1fr); gap: 8px; margin-bottom: 20px; }
         .pc-cell {
@@ -939,7 +952,6 @@ $conn->close();
         .pc-number { font-size: 11px; font-weight: 800; color: rgba(255,255,255,0.95); line-height: 1; }
         .pc-icon-small { font-size: 14px; margin-bottom: 2px; filter: drop-shadow(0 1px 2px rgba(0,0,0,0.2)); }
 
-        /* Bulk actions */
         .pc-bulk {
             display: flex; gap: 8px; flex-wrap: wrap;
             padding-top: 16px; border-top: 1px solid var(--border); margin-bottom: 4px;
@@ -960,7 +972,6 @@ $conn->close();
         .btn-bulk.all-unavailable { background: #fff1f2; color: #dc2626; border-color: #fecdd3; }
         .btn-bulk.all-in-use      { background: #fffbeb; color: #d97706; border-color: #fde68a; }
 
-        /* Footer */
         .pc-modal-footer {
             padding: 14px 24px; border-top: 1px solid var(--border);
             display: flex; justify-content: flex-end; gap: 10px;
@@ -992,7 +1003,6 @@ $conn->close();
         }
         .pc-save-toast.show { display: flex; }
 
-        /* Loading */
         .pc-loading { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 48px 24px; gap: 14px; }
         .spinner { width: 36px; height: 36px; border: 3px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.7s linear infinite; }
         @keyframes spin { to { transform: rotate(360deg); } }
@@ -1092,7 +1102,6 @@ $conn->close();
             <button class="pc-modal-close" onclick="closePcModal()">✕</button>
         </div>
 
-        <!-- First-time setup notice -->
         <div class="pc-first-setup-notice hidden" id="pcFirstSetupNotice">
             ⚠️ <strong>Setup required:</strong> This lab has no PC conditions set yet. Students <strong>cannot reserve</strong> until you save PC statuses below.
         </div>
@@ -1118,7 +1127,6 @@ $conn->close();
     </div>
 
     <?php if (!empty($labs_needing_setup)): ?>
-    <!-- SETUP REQUIRED BANNER -->
     <div class="setup-banner">
         <div class="setup-banner-icon">⚠️</div>
         <div class="setup-banner-text">
@@ -1163,9 +1171,7 @@ $conn->close();
     <div class="alert error">❌ <?= htmlspecialchars($error_msg) ?></div>
     <?php endif; ?>
 
-    <!-- ═══════════════════════════════════════════════════════════
-         SECTION 1: LAB CONFIGURATION
-    ════════════════════════════════════════════════════════════ -->
+    <!-- LAB CONFIGURATION -->
     <div class="card">
         <div class="card-header">
             <div class="card-header-left">
@@ -1180,20 +1186,51 @@ $conn->close();
         <div class="lab-config-body">
 
             <!-- Add Lab Form -->
-            <form method="POST" class="add-lab-form">
+            <form method="POST" class="add-lab-form" id="addLabForm" onsubmit="return validateAddLab()">
                 <input type="hidden" name="action" value="add_lab">
+
                 <div class="field">
                     <label>Laboratory Name</label>
-                    <input type="text" name="lab_name" placeholder="e.g. Lab 524, PC Lab 3…" required>
+                    <?php if (empty($available_lab_options) && empty($all_lab_options)): ?>
+                        <!-- Fallback: show text input if no preset options defined -->
+                        <input type="text" name="lab_name" placeholder="e.g. Lab 524, PC Lab 3…" required>
+                    <?php else: ?>
+                        <select name="lab_name" id="labNameSelect" onchange="handleLabNameChange(this)">
+                            <option value="" disabled selected>— Select a laboratory —</option>
+                            <?php foreach ($available_lab_options as $opt): ?>
+                            <option value="<?= htmlspecialchars($opt) ?>"><?= htmlspecialchars($opt) ?></option>
+                            <?php endforeach; ?>
+                            <?php if (empty($available_lab_options)): ?>
+                            <option value="" disabled>✓ All preset labs already added</option>
+                            <?php endif; ?>
+                            <option value="other">✏️ Other (type manually)…</option>
+                        </select>
+                    <?php endif; ?>
                 </div>
+
+                <!-- Custom name input (shown only when "Other" is selected) -->
+                <div class="custom-name-wrap" id="customNameWrap">
+                    <label>Custom Lab Name</label>
+                    <input type="text" name="lab_name_custom" id="labNameCustom"
+                        placeholder="e.g. PC Lab 3, Room 101…">
+                </div>
+
                 <div class="field">
                     <label>Number of PCs for Reservation</label>
                     <input type="number" name="total_pcs" value="50" min="1" max="200" required>
                 </div>
+
                 <button type="submit" class="btn-add-lab">➕ Add Laboratory</button>
-                <div class="add-lab-note">
-                    ℹ️ After adding a lab, you must click <strong>🖥️ Set PC Status</strong> and publish conditions before students can reserve.
+
+                <?php if (empty($available_lab_options) && !empty($all_lab_options)): ?>
+                <div class="no-labs-notice">
+                    ✓ All preset laboratory names have already been added. Use "Other" to add a custom lab.
                 </div>
+                <?php else: ?>
+                <div class="add-lab-note">
+                    ℹ️ After adding a lab, click <strong>🖥️ Set PC Status</strong> and publish conditions before students can reserve.
+                </div>
+                <?php endif; ?>
             </form>
 
             <!-- Lab Cards -->
@@ -1227,7 +1264,6 @@ $conn->close();
                     </div>
 
                     <?php if ($needs_setup): ?>
-                    <!-- Warning: PC status not yet set -->
                     <div class="lab-setup-warning">
                         🔒 Students cannot reserve — PC conditions not set
                         <button type="button" class="btn-setup-now"
@@ -1282,11 +1318,9 @@ $conn->close();
             <?php endif; ?>
 
         </div>
-    </div><!-- /lab-config card -->
+    </div>
 
-    <!-- ═══════════════════════════════════════════════════════════
-         SECTION 2: RESERVATION REQUESTS
-    ════════════════════════════════════════════════════════════ -->
+    <!-- RESERVATION REQUESTS -->
     <div class="card">
         <div class="card-header">
             <div class="card-header-left">
@@ -1298,7 +1332,6 @@ $conn->close();
             </div>
         </div>
 
-        <!-- FILTER BAR -->
         <form method="GET" class="filter-bar">
             <label>Filter:</label>
             <input type="text" name="search" value="<?= htmlspecialchars($search) ?>" placeholder="Search student, purpose…">
@@ -1324,7 +1357,6 @@ $conn->close();
             <span class="filter-count"><?= count($reservations) ?> record<?= count($reservations)!==1?'s':'' ?></span>
         </form>
 
-        <!-- TABLE -->
         <div class="table-wrap">
             <?php if (empty($reservations)): ?>
             <div class="empty-state">
@@ -1420,11 +1452,52 @@ $conn->close();
             </table>
             <?php endif; ?>
         </div>
-    </div><!-- /reservations card -->
+    </div>
 
-</div><!-- /page-wrapper -->
+</div>
 
 <script>
+// ─── LAB NAME DROPDOWN LOGIC ─────────────────────────────────────
+function handleLabNameChange(sel) {
+    const wrap  = document.getElementById('customNameWrap');
+    const input = document.getElementById('labNameCustom');
+    if (sel.value === 'other') {
+        wrap.classList.add('visible');
+        input.required = true;
+        input.focus();
+    } else {
+        wrap.classList.remove('visible');
+        input.required = false;
+        input.value = '';
+    }
+}
+
+function validateAddLab() {
+    const sel = document.getElementById('labNameSelect');
+    if (!sel) return true; // text input fallback
+
+    if (!sel.value) {
+        sel.style.borderColor = 'red';
+        sel.focus();
+        return false;
+    }
+    sel.style.borderColor = '';
+
+    if (sel.value === 'other') {
+        const custom = document.getElementById('labNameCustom');
+        if (!custom.value.trim()) {
+            custom.style.borderColor = 'red';
+            custom.focus();
+            return false;
+        }
+        custom.style.borderColor = '';
+        // Move the custom value into the main select so PHP picks it up correctly
+        sel.name = '';          // disable the dropdown's name
+        custom.name = 'lab_name'; // promote custom input as lab_name
+    }
+    return true;
+}
+
 // ─── CONFIRM MODAL ───────────────────────────────────────────────
 const modalConfigs = {
     approve: { icon:'✅', title:'Approve Reservation?',
@@ -1465,12 +1538,12 @@ function closeEditLabModal() { document.getElementById('editLabModal').classList
 document.getElementById('editLabModal').addEventListener('click', function(e){ if(e.target===this) closeEditLabModal(); });
 
 // ─── PC AVAILABILITY MODAL ───────────────────────────────────────
-let currentLab      = '';
-let currentTotal    = 50;
-let pcStatuses      = {};
-let isFirstSetup    = false;
-const statusCycle   = ['available','unavailable','in_use'];
-const statusLabels  = { available:'Available', unavailable:'Unavailable', in_use:'In Use' };
+let currentLab   = '';
+let currentTotal = 50;
+let pcStatuses   = {};
+let isFirstSetup = false;
+const statusCycle  = ['available','unavailable','in_use'];
+const statusLabels = { available:'Available', unavailable:'Unavailable', in_use:'In Use' };
 
 function openPcModal(lab, totalPcs) {
     currentLab   = lab;
@@ -1490,14 +1563,9 @@ function openPcModal(lab, totalPcs) {
                 isFirstSetup = !data.pc_status_set;
                 pcStatuses   = {};
                 data.pcs.forEach(p => { pcStatuses[p.pc] = p.status; });
-
-                // Show first-time setup notice if PC conditions haven't been saved yet
                 const notice = document.getElementById('pcFirstSetupNotice');
-                if (isFirstSetup) {
-                    notice.classList.remove('hidden');
-                } else {
-                    notice.classList.add('hidden');
-                }
+                if (isFirstSetup) notice.classList.remove('hidden');
+                else              notice.classList.add('hidden');
                 renderPcGrid();
             }
         })
@@ -1597,12 +1665,9 @@ function updateStats() {
 }
 
 function savePcStatuses() {
-    // Warn if no available PCs
     const availCount = Object.values(pcStatuses).filter(s => s === 'available').length;
     if (availCount === 0) {
-        if (!confirm('No PCs are set to Available — students will not be able to reserve any spot in this lab. Save anyway?')) {
-            return;
-        }
+        if (!confirm('No PCs are set to Available — students will not be able to reserve any spot in this lab. Save anyway?')) return;
     }
 
     const btn = document.getElementById('btnPcSave');
@@ -1621,10 +1686,8 @@ function savePcStatuses() {
         .then(data => {
             btn.disabled=false; btn.innerHTML='💾 Save &amp; Publish';
             if (data.success) {
-                // Hide first-setup notice since it's now set
                 document.getElementById('pcFirstSetupNotice').classList.add('hidden');
                 isFirstSetup = false;
-
                 const toast = document.getElementById('pcSaveToast');
                 const avail = data.available_pcs || 0;
                 toast.innerHTML = avail > 0
