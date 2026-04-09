@@ -28,6 +28,7 @@ $conn->query("
         student_id   VARCHAR(50) NOT NULL,
         student_name VARCHAR(150) NOT NULL,
         lab          VARCHAR(100) NOT NULL,
+        pc_number    VARCHAR(20) DEFAULT NULL,
         purpose      VARCHAR(255) NOT NULL,
         date         DATE NOT NULL,
         time_slot    VARCHAR(50) NOT NULL,
@@ -36,6 +37,12 @@ $conn->query("
     )
 ");
 
+// ── Add pc_number column if it doesn't exist (migration) ──
+$col_check = $conn->query("SHOW COLUMNS FROM reservations LIKE 'pc_number'");
+if ($col_check && $col_check->num_rows === 0) {
+    $conn->query("ALTER TABLE reservations ADD COLUMN pc_number VARCHAR(20) DEFAULT NULL AFTER lab");
+}
+
 // ── Handle form submission ──
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
 
@@ -43,19 +50,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
         $lab       = trim($_POST['lab'] ?? '');
         $date      = trim($_POST['date'] ?? '');
         $time_slot = trim($_POST['time_slot'] ?? '');
+        $pc_number = trim($_POST['pc_number'] ?? '');
 
         // Resolve purpose: use custom if "other" was selected
-        $purpose_sel = trim($_POST['purpose'] ?? '');
+        $purpose_sel    = trim($_POST['purpose'] ?? '');
         $purpose_custom = trim($_POST['purpose_custom'] ?? '');
         $purpose = ($purpose_sel === 'other') ? $purpose_custom : $purpose_sel;
 
-        if ($lab && $purpose && $date && $time_slot) {
+        if ($lab && $purpose && $date && $time_slot && $pc_number) {
             // Check sessions remaining
             $srow = $conn->query("SELECT sessions FROM student WHERE IdNumber = '" . $conn->real_escape_string($student_id) . "'")->fetch_assoc();
             if (!$srow || (int)$srow['sessions'] <= 0) {
                 $error_msg = 'You have no sessions remaining. Cannot make a reservation.';
             } else {
-                // ── SERVER-SIDE: Verify the lab is admin-configured, active, and has available PCs ──
+                // Verify the lab is admin-configured, active, and has available PCs
                 $lab_check = $conn->prepare("
                     SELECT id FROM configured_labs
                     WHERE lab_name = ? AND is_active = 1 AND pc_status_set = 1
@@ -70,42 +78,61 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 } else {
                     $lab_check->close();
 
-                    // Check at least one PC is available
-                    $avail_check = $conn->prepare("
-                        SELECT COUNT(*) FROM lab_pc_status WHERE lab = ? AND status = 'available'
+                    // Verify chosen PC is actually available
+                    $pc_check = $conn->prepare("
+                        SELECT COUNT(*) FROM lab_pc_status
+                        WHERE lab = ? AND pc_number = ? AND status = 'available'
                     ");
-                    $avail_check->bind_param('s', $lab);
-                    $avail_check->execute();
-                    $avail_check->bind_result($avail_pc_count);
-                    $avail_check->fetch();
-                    $avail_check->close();
+                    $pc_check->bind_param('ss', $lab, $pc_number);
+                    $pc_check->execute();
+                    $pc_check->bind_result($pc_avail);
+                    $pc_check->fetch();
+                    $pc_check->close();
 
-                    if ((int)$avail_pc_count < 1) {
-                        $error_msg = 'No PCs are currently available in that laboratory.';
+                    if ((int)$pc_avail < 1) {
+                        $error_msg = 'That PC is no longer available. Please choose another.';
                     } else {
-                        // Prevent duplicate pending reservation for same slot
-                        $chk = $conn->prepare("SELECT id FROM reservations WHERE student_id = ? AND date = ? AND time_slot = ? AND status = 'pending'");
+                        // ── FIXED: Block duplicate for pending OR approved (not just pending) ──
+                        $chk = $conn->prepare("
+                            SELECT id FROM reservations
+                            WHERE student_id = ? AND date = ? AND time_slot = ?
+                              AND status IN ('pending','approved')
+                        ");
                         $chk->bind_param('sss', $student_id, $date, $time_slot);
                         $chk->execute();
                         $chk->store_result();
                         if ($chk->num_rows > 0) {
-                            $error_msg = 'You already have a pending reservation for that date and time slot.';
+                            $error_msg = 'You already have a pending or approved reservation for that date and time slot.';
                         } else {
-                            $ins = $conn->prepare("INSERT INTO reservations (student_id, student_name, lab, purpose, date, time_slot) VALUES (?, ?, ?, ?, ?, ?)");
-                            $ins->bind_param('ssssss', $student_id, $student_name, $lab, $purpose, $date, $time_slot);
-                            if ($ins->execute()) {
-                                $success_msg = 'Reservation submitted successfully! Please wait for admin approval.';
+                            // Also check if this specific PC is already reserved by someone else for that slot
+                            $pc_slot_chk = $conn->prepare("
+                                SELECT id FROM reservations
+                                WHERE lab = ? AND pc_number = ? AND date = ? AND time_slot = ?
+                                  AND status IN ('pending','approved')
+                            ");
+                            $pc_slot_chk->bind_param('ssss', $lab, $pc_number, $date, $time_slot);
+                            $pc_slot_chk->execute();
+                            $pc_slot_chk->store_result();
+                            if ($pc_slot_chk->num_rows > 0) {
+                                $error_msg = 'That PC is already reserved for that date and time slot. Please choose another PC.';
                             } else {
-                                $error_msg = 'Failed to submit reservation. Please try again.';
+                                $ins = $conn->prepare("INSERT INTO reservations (student_id, student_name, lab, pc_number, purpose, date, time_slot) VALUES (?, ?, ?, ?, ?, ?, ?)");
+                                $ins->bind_param('sssssss', $student_id, $student_name, $lab, $pc_number, $purpose, $date, $time_slot);
+                                if ($ins->execute()) {
+                                    $success_msg = 'Reservation submitted! Waiting for admin approval.';
+                                } else {
+                                    $error_msg = 'Failed to submit reservation. Please try again.';
+                                }
+                                $ins->close();
                             }
-                            $ins->close();
+                            $pc_slot_chk->close();
                         }
                         $chk->close();
                     }
                 }
             }
         } else {
-            $error_msg = 'Please fill in all fields.';
+            $error_msg = !$pc_number ? 'Please select a PC from the grid.' : 'Please fill in all fields.';
         }
     }
 
@@ -170,20 +197,20 @@ $conn->close();
 
 // ── Purpose options ──
 $purpose_options = [
-    'C Programming'            => 'C Programming',
-    'Java Programming'         => 'Java Programming',
-    'Python Programming'       => 'Python Programming',
-    'Web Development'          => 'Web Development',
-    'Database (SQL / MySQL)'   => 'Database (SQL / MySQL)',
-    'Data Structures'          => 'Data Structures',
+    'C Programming'                => 'C Programming',
+    'Java Programming'             => 'Java Programming',
+    'Python Programming'           => 'Python Programming',
+    'Web Development'              => 'Web Development',
+    'Database (SQL / MySQL)'       => 'Database (SQL / MySQL)',
+    'Data Structures'              => 'Data Structures',
     'Algorithms & Problem Solving' => 'Algorithms & Problem Solving',
-    'Networking Lab'           => 'Networking Lab',
-    'Operating Systems'        => 'Operating Systems',
-    'Software Engineering'     => 'Software Engineering',
-    'Thesis / Capstone Project' => 'Thesis / Capstone Project',
-    'Research & Study'         => 'Research & Study',
-    'Online Class / E-learning' => 'Online Class / E-learning',
-    'other'                    => '✏️ Other (specify)…',
+    'Networking Lab'               => 'Networking Lab',
+    'Operating Systems'            => 'Operating Systems',
+    'Software Engineering'         => 'Software Engineering',
+    'Thesis / Capstone Project'    => 'Thesis / Capstone Project',
+    'Research & Study'             => 'Research & Study',
+    'Online Class / E-learning'    => 'Online Class / E-learning',
+    'other'                        => '✏️ Other (specify)…',
 ];
 ?>
 <!DOCTYPE html>
@@ -265,7 +292,6 @@ $purpose_options = [
 
         .btn-logout:hover { transform: translateY(-1px); box-shadow: 0 4px 14px rgba(240,165,0,0.5) !important; }
 
-        /* ── NOTIFICATION BUTTON ── */
         .notif-wrapper { position: relative; display: flex; align-items: center; }
 
         .notif-btn {
@@ -293,7 +319,6 @@ $purpose_options = [
         /* ── PAGE ── */
         .page-wrap { padding: 24px 28px; max-width: 1200px; margin: 0 auto; }
 
-        /* ── PAGE HEADER ── */
         .page-header {
             display: flex; align-items: center; gap: 14px;
             margin-bottom: 22px;
@@ -354,7 +379,7 @@ $purpose_options = [
         /* ── MAIN GRID ── */
         .main-grid {
             display: grid;
-            grid-template-columns: 380px 1fr;
+            grid-template-columns: 420px 1fr;
             gap: 20px;
             align-items: start;
         }
@@ -412,6 +437,7 @@ $purpose_options = [
         .form-group select,
         .form-group input[type="date"],
         .form-group input[type="text"],
+        .form-group input[type="hidden"],
         .form-group textarea {
             width: 100%;
             padding: 10px 13px;
@@ -434,11 +460,138 @@ $purpose_options = [
             box-shadow: 0 0 0 3px rgba(59,111,212,0.12);
         }
 
-        /* Purpose custom input */
-        .purpose-custom-wrap {
+        /* ── PC GRID ── */
+        .pc-section {
             display: none;
             flex-direction: column;
-            gap: 5px;
+            gap: 10px;
+            animation: slideDown 0.22s ease;
+        }
+        .pc-section.visible { display: flex; }
+
+        .pc-grid-header {
+            display: flex; align-items: center; justify-content: space-between;
+        }
+
+        .pc-legend {
+            display: flex; gap: 10px; flex-wrap: wrap;
+        }
+
+        .pc-legend-item {
+            display: flex; align-items: center; gap: 4px;
+            font-size: 10.5px; font-weight: 600; color: var(--muted);
+        }
+
+        .pc-legend-dot {
+            width: 10px; height: 10px; border-radius: 3px;
+        }
+
+        .pc-legend-dot.available  { background: var(--green); }
+        .pc-legend-dot.taken      { background: #ccc; }
+        .pc-legend-dot.selected   { background: var(--accent); }
+
+        .pc-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(58px, 1fr));
+            gap: 7px;
+        }
+
+        .pc-btn {
+            position: relative;
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            gap: 3px;
+            padding: 10px 4px 8px;
+            border-radius: 10px;
+            border: 2px solid var(--border);
+            background: #fafbfd;
+            cursor: pointer;
+            font-family: 'DM Sans', sans-serif;
+            transition: all 0.15s;
+            min-height: 62px;
+        }
+
+        .pc-btn .pc-icon { font-size: 18px; line-height: 1; }
+        .pc-btn .pc-num  { font-size: 10.5px; font-weight: 700; color: var(--muted); }
+
+        .pc-btn.available {
+            border-color: #b6e8d4;
+            background: var(--green-bg);
+        }
+
+        .pc-btn.available .pc-num { color: #0a7a52; }
+
+        .pc-btn.available:hover {
+            border-color: var(--green);
+            background: #d0f3e8;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 10px rgba(28,184,126,0.2);
+        }
+
+        .pc-btn.taken {
+            border-color: #e0e0e0;
+            background: #f5f5f5;
+            cursor: not-allowed;
+            opacity: 0.6;
+        }
+
+        .pc-btn.taken .pc-icon { filter: grayscale(1); }
+        .pc-btn.taken .pc-num  { color: #aaa; }
+
+        .pc-btn.selected {
+            border-color: var(--accent) !important;
+            background: linear-gradient(135deg, #dce8ff, #eef3ff) !important;
+            box-shadow: 0 0 0 3px rgba(59,111,212,0.18), 0 4px 12px rgba(36,82,160,0.2);
+            transform: translateY(-2px);
+        }
+
+        .pc-btn.selected .pc-num { color: var(--accent); font-size: 11px; }
+
+        .pc-btn.selected::after {
+            content: '✓';
+            position: absolute; top: 4px; right: 5px;
+            font-size: 9px; font-weight: 900;
+            color: var(--accent); background: white;
+            width: 14px; height: 14px; border-radius: 50%;
+            display: flex; align-items: center; justify-content: center;
+            box-shadow: 0 1px 4px rgba(59,111,212,0.3);
+        }
+
+        .pc-loading {
+            text-align: center; padding: 24px;
+            color: var(--muted); font-size: 13px;
+            display: flex; align-items: center; justify-content: center; gap: 8px;
+        }
+
+        .spin {
+            width: 16px; height: 16px; border-radius: 50%;
+            border: 2px solid var(--border);
+            border-top-color: var(--accent);
+            animation: spin 0.7s linear infinite;
+            display: inline-block;
+        }
+
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        .pc-selected-info {
+            display: none;
+            align-items: center; gap: 8px;
+            padding: 9px 13px; border-radius: 9px;
+            background: #dce8ff; border: 1.5px solid var(--accent);
+            font-size: 12.5px; font-weight: 700; color: var(--accent);
+        }
+
+        .pc-selected-info.visible { display: flex; }
+
+        .pc-required-hint {
+            font-size: 11.5px; color: var(--red);
+            display: none; margin-top: 2px;
+        }
+
+        .pc-required-hint.visible { display: block; }
+
+        /* Purpose custom input */
+        .purpose-custom-wrap {
+            display: none; flex-direction: column; gap: 5px;
             animation: slideDown 0.18s ease;
         }
         .purpose-custom-wrap.visible { display: flex; }
@@ -458,23 +611,15 @@ $purpose_options = [
             to   { opacity: 1; transform: translateY(0); }
         }
 
-        .char-count {
-            font-size: 11px; color: var(--muted);
-            text-align: right;
-        }
+        .char-count { font-size: 11px; color: var(--muted); text-align: right; }
 
-        /* Lab loading state */
-        .lab-load-msg {
-            font-size: 11.5px; margin-top: 4px; display: none;
-        }
+        .lab-load-msg { font-size: 11.5px; margin-top: 4px; display: none; }
         .lab-load-msg.warning { color: var(--orange); }
         .lab-load-msg.error   { color: var(--red); }
 
         /* Time slots grid */
         .slot-grid {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 8px;
+            display: grid; grid-template-columns: 1fr 1fr; gap: 8px;
         }
 
         .slot-option { display: none; }
@@ -533,11 +678,9 @@ $purpose_options = [
         thead tr { background: var(--tag-bg); border-bottom: 2px solid var(--border); }
 
         thead th {
-            padding: 11px 16px;
-            text-align: left;
+            padding: 11px 16px; text-align: left;
             font-size: 11px; font-weight: 700;
-            color: var(--navy); text-transform: uppercase; letter-spacing: 0.5px;
-            white-space: nowrap;
+            color: var(--navy); text-transform: uppercase; letter-spacing: 0.5px; white-space: nowrap;
         }
 
         thead th.center { text-align: center; }
@@ -553,29 +696,34 @@ $purpose_options = [
             display: inline-flex; align-items: center; gap: 5px;
             background: var(--tag-bg); color: var(--navy-light);
             padding: 4px 10px; border-radius: 20px;
-            font-size: 12px; font-weight: 700; border: 1px solid #c8d4ee;
-            white-space: nowrap;
+            font-size: 12px; font-weight: 700; border: 1px solid #c8d4ee; white-space: nowrap;
+        }
+
+        .pc-tag {
+            display: inline-flex; align-items: center; gap: 4px;
+            background: #dce8ff; color: var(--accent);
+            padding: 3px 9px; border-radius: 20px;
+            font-size: 11.5px; font-weight: 700; border: 1px solid #b8ccf5;
+            white-space: nowrap; margin-top: 4px;
         }
 
         .slot-tag {
             display: inline-flex; align-items: center; gap: 4px;
             background: #f0f3f9; color: var(--text);
             padding: 4px 10px; border-radius: 20px;
-            font-size: 12px; font-weight: 600; border: 1px solid var(--border);
-            white-space: nowrap;
+            font-size: 12px; font-weight: 600; border: 1px solid var(--border); white-space: nowrap;
         }
 
         .status-pill {
             display: inline-flex; align-items: center; gap: 5px;
             padding: 4px 10px; border-radius: 20px;
-            font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.4px;
-            white-space: nowrap;
+            font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.4px; white-space: nowrap;
         }
 
-        .status-pill.pending  { background: #fff8e1; color: #c07000; }
-        .status-pill.approved { background: var(--green-bg); color: var(--green); }
-        .status-pill.rejected { background: var(--red-bg); color: var(--red); }
-        .status-pill.cancelled{ background: #f0f3f9; color: var(--muted); }
+        .status-pill.pending   { background: #fff8e1; color: #c07000; }
+        .status-pill.approved  { background: var(--green-bg); color: var(--green); }
+        .status-pill.rejected  { background: var(--red-bg); color: var(--red); }
+        .status-pill.cancelled { background: #f0f3f9; color: var(--muted); }
 
         .status-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
 
@@ -589,10 +737,7 @@ $purpose_options = [
 
         .btn-cancel:hover { background: #fcd5d5; border-color: #e08080; }
 
-        .empty-state {
-            text-align: center; padding: 50px 24px; color: var(--muted);
-        }
-
+        .empty-state { text-align: center; padding: 50px 24px; color: var(--muted); }
         .empty-state .empty-icon { font-size: 44px; margin-bottom: 12px; opacity: 0.4; }
         .empty-state h3 { font-size: 15px; font-weight: 700; color: var(--navy); margin-bottom: 5px; }
         .empty-state p  { font-size: 13px; }
@@ -665,7 +810,6 @@ $purpose_options = [
         <div class="nav-title">College of Computer Studies<br>Sit-in Monitoring System</div>
     </div>
     <div class="nav-links">
-
         <div class="notif-wrapper">
             <button class="notif-btn" onclick="window.location.href='notification.php'">
                 <span>🔔</span>
@@ -677,7 +821,6 @@ $purpose_options = [
                 <?php endif; ?>
             </button>
         </div>
-
         <a href="/SYSARCH/user/user_home.php">Home</a>
         <a href="/SYSARCH/user/user_edit_profile.php">Edit Profile</a>
         <a href="/SYSARCH/user/history.php">History</a>
@@ -784,13 +927,45 @@ $purpose_options = [
                 <!-- Laboratory -->
                 <div class="form-group">
                     <label><span class="licon">🏛️</span> Laboratory</label>
-                    <select name="lab" id="labSelect" required <?= $sessions_remaining <= 0 ? 'disabled' : '' ?>>
+                    <select name="lab" id="labSelect" required <?= $sessions_remaining <= 0 ? 'disabled' : '' ?>
+                        onchange="handleLabChange(this.value)">
                         <option value="" disabled selected>Loading available labs…</option>
                     </select>
                     <div class="lab-load-msg" id="labLoadMsg"></div>
                 </div>
 
-                <!-- Purpose — dropdown with "Other" fallback -->
+                <!-- PC Selection Grid (shown after lab is selected) -->
+                <div class="form-group">
+                    <div class="pc-section" id="pcSection">
+                        <label style="margin-bottom:2px;">
+                            <span class="licon">🖥️</span> Select a PC
+                        </label>
+                        <div class="pc-grid-header">
+                            <div class="pc-legend">
+                                <div class="pc-legend-item">
+                                    <div class="pc-legend-dot available"></div> Available
+                                </div>
+                                <div class="pc-legend-item">
+                                    <div class="pc-legend-dot taken"></div> Unavailable
+                                </div>
+                                <div class="pc-legend-item">
+                                    <div class="pc-legend-dot selected"></div> Your Pick
+                                </div>
+                            </div>
+                        </div>
+                        <div id="pcGrid" class="pc-grid">
+                            <div class="pc-loading"><span class="spin"></span> Loading PCs…</div>
+                        </div>
+                        <!-- Hidden input that carries the chosen PC to PHP -->
+                        <input type="hidden" name="pc_number" id="pcNumberInput">
+                        <div class="pc-selected-info" id="pcSelectedInfo">
+                            🖥️ <span id="pcSelectedLabel">PC selected</span>
+                        </div>
+                        <div class="pc-required-hint" id="pcRequiredHint">⚠️ Please select a PC before submitting.</div>
+                    </div>
+                </div>
+
+                <!-- Purpose -->
                 <div class="form-group">
                     <label><span class="licon">📌</span> Purpose</label>
                     <select name="purpose" id="purposeSelect" required
@@ -802,7 +977,6 @@ $purpose_options = [
                         <?php endforeach; ?>
                     </select>
 
-                    <!-- Shown only when "Other" is selected -->
                     <div class="purpose-custom-wrap" id="purposeCustomWrap">
                         <input type="text"
                             name="purpose_custom"
@@ -876,7 +1050,7 @@ $purpose_options = [
                     <thead>
                         <tr>
                             <th>Date</th>
-                            <th>Laboratory</th>
+                            <th>Laboratory / PC</th>
                             <th>Time Slot</th>
                             <th>Purpose</th>
                             <th class="center">Status</th>
@@ -885,19 +1059,25 @@ $purpose_options = [
                     </thead>
                     <tbody>
                         <?php foreach ($reservations as $res):
-                            $d = $res['date'];
+                            $d        = $res['date'];
                             $date_fmt = $d ? date('M j, Y', strtotime($d)) : '—';
                             $day_fmt  = $d ? date('D', strtotime($d)) : '';
                             $status   = $res['status'];
+                            $pc_num   = $res['pc_number'] ?? null;
                         ?>
                         <tr>
                             <td>
                                 <div class="td-date"><?= htmlspecialchars($date_fmt) ?></div>
                                 <div class="td-date-sub"><?= htmlspecialchars($day_fmt) ?></div>
                             </td>
-                            <td><span class="lab-tag">🏛️ <?= htmlspecialchars($res['lab']) ?></span></td>
+                            <td>
+                                <span class="lab-tag">🏛️ <?= htmlspecialchars($res['lab']) ?></span>
+                                <?php if ($pc_num): ?>
+                                <br><span class="pc-tag">🖥️ PC <?= htmlspecialchars($pc_num) ?></span>
+                                <?php endif; ?>
+                            </td>
                             <td><span class="slot-tag">⏱ <?= htmlspecialchars($res['time_slot']) ?></span></td>
-                            <td style="max-width:180px;">
+                            <td style="max-width:160px;">
                                 <div style="font-size:13px;color:#445;line-height:1.4;white-space:normal;">
                                     <?= htmlspecialchars($res['purpose']) ?>
                                 </div>
@@ -934,10 +1114,85 @@ $purpose_options = [
 </div><!-- /page-wrap -->
 
 <script>
-// ── Purpose dropdown: show/hide custom input ──────────────────────
+// ── Lab change: load PCs for selected lab ─────────────────────────
+async function handleLabChange(labName) {
+    const pcSection = document.getElementById('pcSection');
+    const pcGrid    = document.getElementById('pcGrid');
+    const pcInput   = document.getElementById('pcNumberInput');
+    const pcInfo    = document.getElementById('pcSelectedInfo');
+    const pcHint    = document.getElementById('pcRequiredHint');
+
+    // Reset PC selection
+    pcInput.value = '';
+    pcInfo.classList.remove('visible');
+    pcHint.classList.remove('visible');
+
+    if (!labName) {
+        pcSection.classList.remove('visible');
+        return;
+    }
+
+    pcSection.classList.add('visible');
+    pcGrid.innerHTML = '<div class="pc-loading"><span class="spin"></span> Loading PCs…</div>';
+
+    try {
+        // ── FIXED: use get_pc_status which actually exists in admin_reservation.php ──
+        const res  = await fetch('/SYSARCH/admin/admin_reservation.php?ajax=get_pc_status&lab=' + encodeURIComponent(labName));
+        const data = await res.json();
+
+        if (!data.success || !data.pcs || data.pcs.length === 0) {
+            pcGrid.innerHTML = '<div class="pc-loading" style="color:var(--orange);">⚠️ No PC data found for this lab.</div>';
+            return;
+        }
+
+        pcGrid.innerHTML = '';
+        data.pcs.forEach(pc => {
+            // get_pc_status returns { pc: N, status: '...' }
+            const isAvailable = pc.status === 'available';
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'pc-btn ' + (isAvailable ? 'available' : 'taken');
+            btn.dataset.pc = pc.pc;
+            btn.disabled = !isAvailable;
+            btn.innerHTML = `<span class="pc-icon">${isAvailable ? '🖥️' : '🚫'}</span><span class="pc-num">PC ${pc.pc}</span>`;
+
+            if (isAvailable) {
+                btn.addEventListener('click', () => selectPC(pc.pc, btn));
+            }
+
+            pcGrid.appendChild(btn);
+        });
+
+    } catch (e) {
+        pcGrid.innerHTML = '<div class="pc-loading" style="color:var(--red);">⚠️ Failed to load PCs. Please refresh.</div>';
+    }
+}
+
+function selectPC(pcNumber, btnEl) {
+    // Deselect all
+    document.querySelectorAll('.pc-btn.selected').forEach(b => b.classList.remove('selected'));
+
+    // Select this one
+    btnEl.classList.add('selected');
+
+    // Update hidden input
+    const pcInput = document.getElementById('pcNumberInput');
+    pcInput.value = pcNumber;
+
+    // Show selected info
+    const pcInfo  = document.getElementById('pcSelectedInfo');
+    const pcLabel = document.getElementById('pcSelectedLabel');
+    pcLabel.textContent = 'PC ' + pcNumber + ' selected';
+    pcInfo.classList.add('visible');
+
+    // Hide hint if showing
+    document.getElementById('pcRequiredHint').classList.remove('visible');
+}
+
+// ── Purpose dropdown ──────────────────────────────────────────────
 function handlePurposeChange(sel) {
-    const wrap   = document.getElementById('purposeCustomWrap');
-    const input  = document.getElementById('purposeCustom');
+    const wrap  = document.getElementById('purposeCustomWrap');
+    const input = document.getElementById('purposeCustom');
     if (sel.value === 'other') {
         wrap.classList.add('visible');
         input.required = true;
@@ -961,6 +1216,18 @@ function updateCustomCount() {
 
 // ── Form validation ───────────────────────────────────────────────
 function validateReservationForm() {
+    // Validate PC selection
+    const pcInput = document.getElementById('pcNumberInput');
+    const pcSection = document.getElementById('pcSection');
+    const pcHint  = document.getElementById('pcRequiredHint');
+
+    if (pcSection.classList.contains('visible') && !pcInput.value) {
+        pcHint.classList.add('visible');
+        pcSection.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        return false;
+    }
+
+    // Validate custom purpose
     const sel = document.getElementById('purposeSelect');
     if (sel.value === 'other') {
         const custom = document.getElementById('purposeCustom');
@@ -970,17 +1237,16 @@ function validateReservationForm() {
             return false;
         }
         custom.style.borderColor = '';
-        // Swap name so PHP receives the custom text as "purpose"
         sel.name = '';
         custom.name = 'purpose';
     }
     return true;
 }
 
-// ── Dynamically load labs ─────────────────────────────────────────
+// ── Load labs ─────────────────────────────────────────────────────
 async function loadConfiguredLabs() {
-    const sel = document.getElementById('labSelect');
-    const msg = document.getElementById('labLoadMsg');
+    const sel       = document.getElementById('labSelect');
+    const msg       = document.getElementById('labLoadMsg');
     const submitBtn = document.getElementById('submitBtn');
     if (!sel) return;
 
