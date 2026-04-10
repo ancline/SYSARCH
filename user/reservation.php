@@ -92,7 +92,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                     if ((int)$pc_avail < 1) {
                         $error_msg = 'That PC is no longer available. Please choose another.';
                     } else {
-                        // ── FIXED: Block duplicate for pending OR approved (not just pending) ──
+                        // ── Block duplicate for pending OR approved ──
                         $chk = $conn->prepare("
                             SELECT id FROM reservations
                             WHERE student_id = ? AND date = ? AND time_slot = ?
@@ -104,7 +104,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                         if ($chk->num_rows > 0) {
                             $error_msg = 'You already have a pending or approved reservation for that date and time slot.';
                         } else {
-                            // Also check if this specific PC is already reserved by someone else for that slot
+                            // Check if this specific PC is already reserved by someone else for that slot
                             $pc_slot_chk = $conn->prepare("
                                 SELECT id FROM reservations
                                 WHERE lab = ? AND pc_number = ? AND date = ? AND time_slot = ?
@@ -460,127 +460,34 @@ $purpose_options = [
             box-shadow: 0 0 0 3px rgba(59,111,212,0.12);
         }
 
-        /* ── PC GRID ── */
-        .pc-section {
+        /* ── PC PICKER BUTTON ── */
+        .pc-picker-wrap {
             display: none;
             flex-direction: column;
-            gap: 10px;
+            gap: 8px;
             animation: slideDown 0.22s ease;
         }
-        .pc-section.visible { display: flex; }
+        .pc-picker-wrap.visible { display: flex; }
 
-        .pc-grid-header {
-            display: flex; align-items: center; justify-content: space-between;
-        }
-
-        .pc-legend {
-            display: flex; gap: 10px; flex-wrap: wrap;
-        }
-
-        .pc-legend-item {
-            display: flex; align-items: center; gap: 4px;
-            font-size: 10.5px; font-weight: 600; color: var(--muted);
-        }
-
-        .pc-legend-dot {
-            width: 10px; height: 10px; border-radius: 3px;
-        }
-
-        .pc-legend-dot.available  { background: var(--green); }
-        .pc-legend-dot.taken      { background: #ccc; }
-        .pc-legend-dot.selected   { background: var(--accent); }
-
-        .pc-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(58px, 1fr));
-            gap: 7px;
-        }
-
-        .pc-btn {
-            position: relative;
-            display: flex; flex-direction: column; align-items: center; justify-content: center;
-            gap: 3px;
-            padding: 10px 4px 8px;
-            border-radius: 10px;
-            border: 2px solid var(--border);
-            background: #fafbfd;
-            cursor: pointer;
+        .btn-pick-pc {
+            display: flex; align-items: center; justify-content: center; gap: 9px;
+            padding: 11px 16px; border-radius: 11px;
+            border: 2px dashed var(--border);
+            background: #fafbfd; cursor: pointer;
             font-family: 'DM Sans', sans-serif;
-            transition: all 0.15s;
-            min-height: 62px;
+            font-size: 13.5px; font-weight: 700; color: var(--muted);
+            transition: all 0.18s; width: 100%;
         }
 
-        .pc-btn .pc-icon { font-size: 18px; line-height: 1; }
-        .pc-btn .pc-num  { font-size: 10.5px; font-weight: 700; color: var(--muted); }
-
-        .pc-btn.available {
-            border-color: #b6e8d4;
-            background: var(--green-bg);
+        .btn-pick-pc:hover {
+            border-color: var(--accent); color: var(--accent);
+            background: #f0f4ff; border-style: solid;
         }
 
-        .pc-btn.available .pc-num { color: #0a7a52; }
-
-        .pc-btn.available:hover {
-            border-color: var(--green);
-            background: #d0f3e8;
-            transform: translateY(-2px);
-            box-shadow: 0 4px 10px rgba(28,184,126,0.2);
+        .btn-pick-pc.has-selection {
+            border-style: solid; border-color: var(--accent);
+            background: #dce8ff; color: var(--accent);
         }
-
-        .pc-btn.taken {
-            border-color: #e0e0e0;
-            background: #f5f5f5;
-            cursor: not-allowed;
-            opacity: 0.6;
-        }
-
-        .pc-btn.taken .pc-icon { filter: grayscale(1); }
-        .pc-btn.taken .pc-num  { color: #aaa; }
-
-        .pc-btn.selected {
-            border-color: var(--accent) !important;
-            background: linear-gradient(135deg, #dce8ff, #eef3ff) !important;
-            box-shadow: 0 0 0 3px rgba(59,111,212,0.18), 0 4px 12px rgba(36,82,160,0.2);
-            transform: translateY(-2px);
-        }
-
-        .pc-btn.selected .pc-num { color: var(--accent); font-size: 11px; }
-
-        .pc-btn.selected::after {
-            content: '✓';
-            position: absolute; top: 4px; right: 5px;
-            font-size: 9px; font-weight: 900;
-            color: var(--accent); background: white;
-            width: 14px; height: 14px; border-radius: 50%;
-            display: flex; align-items: center; justify-content: center;
-            box-shadow: 0 1px 4px rgba(59,111,212,0.3);
-        }
-
-        .pc-loading {
-            text-align: center; padding: 24px;
-            color: var(--muted); font-size: 13px;
-            display: flex; align-items: center; justify-content: center; gap: 8px;
-        }
-
-        .spin {
-            width: 16px; height: 16px; border-radius: 50%;
-            border: 2px solid var(--border);
-            border-top-color: var(--accent);
-            animation: spin 0.7s linear infinite;
-            display: inline-block;
-        }
-
-        @keyframes spin { to { transform: rotate(360deg); } }
-
-        .pc-selected-info {
-            display: none;
-            align-items: center; gap: 8px;
-            padding: 9px 13px; border-radius: 9px;
-            background: #dce8ff; border: 1.5px solid var(--accent);
-            font-size: 12.5px; font-weight: 700; color: var(--accent);
-        }
-
-        .pc-selected-info.visible { display: flex; }
 
         .pc-required-hint {
             font-size: 11.5px; color: var(--red);
@@ -588,6 +495,158 @@ $purpose_options = [
         }
 
         .pc-required-hint.visible { display: block; }
+
+        /* ── PC PICKER MODAL ── */
+        .pc-modal-overlay {
+            display: none; position: fixed; inset: 0;
+            background: rgba(15,38,83,0.5); z-index: 600;
+            align-items: center; justify-content: center;
+            padding: 20px;
+        }
+
+        .pc-modal-overlay.open { display: flex; }
+
+        .pc-modal {
+            background: white; border-radius: 20px;
+            width: 100%; max-width: 560px;
+            box-shadow: 0 20px 60px rgba(15,38,83,0.35);
+            animation: modalIn 0.22s ease;
+            overflow: hidden;
+            display: flex; flex-direction: column;
+            max-height: 90vh;
+        }
+
+        .pc-modal-header {
+            background: linear-gradient(135deg, var(--navy) 0%, var(--navy-light) 100%);
+            color: white; padding: 16px 22px;
+            display: flex; align-items: center; justify-content: space-between;
+            flex-shrink: 0;
+        }
+
+        .pc-modal-header-left { display: flex; align-items: center; gap: 10px; }
+        .pc-modal-header-left .hicon {
+            width: 32px; height: 32px; background: rgba(255,255,255,0.18);
+            border-radius: 9px; display: flex; align-items: center;
+            justify-content: center; font-size: 16px;
+        }
+
+        .pc-modal-header-left h2 {
+            font-size: 14px; font-weight: 700; letter-spacing: 0.4px; line-height: 1.2; margin: 0;
+        }
+
+        .pc-modal-header-left p {
+            font-size: 11.5px; color: rgba(255,255,255,0.7); margin-top: 2px;
+        }
+
+        .pc-modal-close-btn {
+            background: rgba(255,255,255,0.15); border: none; cursor: pointer;
+            width: 30px; height: 30px; border-radius: 8px;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 15px; color: white; font-family: 'DM Sans', sans-serif;
+            transition: background 0.15s; flex-shrink: 0;
+        }
+
+        .pc-modal-close-btn:hover { background: rgba(255,255,255,0.28); }
+
+        .pc-modal-body { padding: 20px 22px; overflow-y: auto; flex: 1; }
+
+        .pc-legend {
+            display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 16px;
+        }
+
+        .pc-legend-item {
+            display: flex; align-items: center; gap: 5px;
+            font-size: 11px; font-weight: 600; color: var(--muted);
+        }
+
+        .pc-legend-dot { width: 10px; height: 10px; border-radius: 3px; }
+        .pc-legend-dot.available { background: var(--green); }
+        .pc-legend-dot.taken     { background: #ccc; }
+        .pc-legend-dot.selected  { background: var(--accent); }
+
+        .pc-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(72px, 1fr));
+            gap: 8px;
+        }
+
+        .pc-btn {
+            position: relative;
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            gap: 4px; padding: 12px 4px 9px; border-radius: 11px;
+            border: 2px solid var(--border); background: #fafbfd;
+            cursor: pointer; font-family: 'DM Sans', sans-serif;
+            transition: all 0.15s; min-height: 68px;
+        }
+
+        .pc-btn .pc-icon { font-size: 20px; line-height: 1; }
+        .pc-btn .pc-num  { font-size: 11px; font-weight: 700; color: var(--muted); }
+
+        .pc-btn.available { border-color: #b6e8d4; background: var(--green-bg); }
+        .pc-btn.available .pc-num { color: #0a7a52; }
+        .pc-btn.available:hover {
+            border-color: var(--green); background: #d0f3e8;
+            transform: translateY(-2px); box-shadow: 0 4px 10px rgba(28,184,126,0.2);
+        }
+
+        .pc-btn.taken {
+            border-color: #e0e0e0; background: #f5f5f5;
+            cursor: not-allowed; opacity: 0.55;
+        }
+        .pc-btn.taken .pc-icon { filter: grayscale(1); }
+        .pc-btn.taken .pc-num  { color: #aaa; }
+
+        .pc-btn.selected {
+            border-color: var(--accent) !important;
+            background: #dce8ff !important;
+            box-shadow: 0 0 0 3px rgba(59,111,212,0.2), 0 4px 12px rgba(36,82,160,0.2);
+            transform: translateY(-2px);
+        }
+        .pc-btn.selected .pc-num { color: var(--accent); }
+        .pc-btn.selected::after {
+            content: '✓'; position: absolute; top: 5px; right: 6px;
+            font-size: 9px; font-weight: 900; color: var(--accent); background: white;
+            width: 15px; height: 15px; border-radius: 50%;
+            display: flex; align-items: center; justify-content: center;
+            box-shadow: 0 1px 4px rgba(59,111,212,0.3);
+        }
+
+        .pc-loading {
+            text-align: center; padding: 36px 24px;
+            color: var(--muted); font-size: 13px;
+            display: flex; align-items: center; justify-content: center; gap: 8px;
+        }
+
+        .spin {
+            width: 16px; height: 16px; border-radius: 50%;
+            border: 2px solid var(--border); border-top-color: var(--accent);
+            animation: spin 0.7s linear infinite; display: inline-block;
+        }
+
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        .pc-modal-footer {
+            padding: 14px 22px 18px;
+            border-top: 1px solid var(--border);
+            display: flex; align-items: center; gap: 10px;
+            flex-shrink: 0;
+        }
+
+        .pc-modal-selection-label {
+            flex: 1; font-size: 13px; font-weight: 600; color: var(--muted);
+        }
+        .pc-modal-selection-label.chosen { color: var(--accent); }
+
+        .btn-confirm-pc {
+            padding: 10px 22px; border-radius: 10px;
+            background: linear-gradient(135deg, var(--navy), var(--accent));
+            color: white; border: none;
+            font-size: 13.5px; font-weight: 700; font-family: 'DM Sans', sans-serif;
+            cursor: pointer; box-shadow: 0 3px 12px rgba(36,82,160,0.3);
+            transition: transform 0.15s, box-shadow 0.15s, opacity 0.15s;
+        }
+        .btn-confirm-pc:hover { transform: translateY(-1px); box-shadow: 0 5px 18px rgba(36,82,160,0.4); }
+        .btn-confirm-pc:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
 
         /* Purpose custom input */
         .purpose-custom-wrap {
@@ -745,7 +804,7 @@ $purpose_options = [
         .td-date { font-weight: 700; color: var(--navy); font-size: 13px; white-space: nowrap; }
         .td-date-sub { font-size: 11px; color: var(--muted); font-weight: 400; margin-top: 1px; }
 
-        /* ── MODAL CONFIRM ── */
+        /* ── CANCEL MODAL ── */
         .modal-overlay {
             display: none; position: fixed; inset: 0;
             background: rgba(15,38,83,0.45); z-index: 500;
@@ -846,6 +905,44 @@ $purpose_options = [
     </div>
 </div>
 
+<!-- PC PICKER MODAL -->
+<div class="pc-modal-overlay" id="pcModal">
+    <div class="pc-modal">
+        <div class="pc-modal-header">
+            <div class="pc-modal-header-left">
+                <div class="hicon">🖥️</div>
+                <div>
+                    <h2>Select a PC</h2>
+                    <p id="pcModalLabName">Choose an available PC from the grid</p>
+                </div>
+            </div>
+            <button class="pc-modal-close-btn" onclick="closePcModal()">✕</button>
+        </div>
+        <div class="pc-modal-body">
+            <div class="pc-legend">
+                <div class="pc-legend-item">
+                    <div class="pc-legend-dot available"></div> Available
+                </div>
+                <div class="pc-legend-item">
+                    <div class="pc-legend-dot taken"></div> Unavailable
+                </div>
+                <div class="pc-legend-item">
+                    <div class="pc-legend-dot selected"></div> Your Pick
+                </div>
+            </div>
+            <div id="pcGrid" class="pc-grid">
+                <div class="pc-loading"><span class="spin"></span> Loading PCs…</div>
+            </div>
+        </div>
+        <div class="pc-modal-footer">
+            <div class="pc-modal-selection-label" id="pcModalSelLabel">No PC selected yet</div>
+            <button class="btn-confirm-pc" id="btnConfirmPc" disabled onclick="confirmPcSelection()">
+                ✓ Confirm Selection
+            </button>
+        </div>
+    </div>
+</div>
+
 <!-- PAGE -->
 <div class="page-wrap">
 
@@ -934,33 +1031,14 @@ $purpose_options = [
                     <div class="lab-load-msg" id="labLoadMsg"></div>
                 </div>
 
-                <!-- PC Selection Grid (shown after lab is selected) -->
+                <!-- PC Picker Button (shown after lab is selected) -->
                 <div class="form-group">
-                    <div class="pc-section" id="pcSection">
-                        <label style="margin-bottom:2px;">
-                            <span class="licon">🖥️</span> Select a PC
-                        </label>
-                        <div class="pc-grid-header">
-                            <div class="pc-legend">
-                                <div class="pc-legend-item">
-                                    <div class="pc-legend-dot available"></div> Available
-                                </div>
-                                <div class="pc-legend-item">
-                                    <div class="pc-legend-dot taken"></div> Unavailable
-                                </div>
-                                <div class="pc-legend-item">
-                                    <div class="pc-legend-dot selected"></div> Your Pick
-                                </div>
-                            </div>
-                        </div>
-                        <div id="pcGrid" class="pc-grid">
-                            <div class="pc-loading"><span class="spin"></span> Loading PCs…</div>
-                        </div>
-                        <!-- Hidden input that carries the chosen PC to PHP -->
+                    <div class="pc-picker-wrap" id="pcPickerWrap">
+                        <label><span class="licon">🖥️</span> PC Selection</label>
+                        <button type="button" class="btn-pick-pc" id="btnPickPc" onclick="openPcModal()">
+                            🖥️ Click to choose a PC
+                        </button>
                         <input type="hidden" name="pc_number" id="pcNumberInput">
-                        <div class="pc-selected-info" id="pcSelectedInfo">
-                            🖥️ <span id="pcSelectedLabel">PC selected</span>
-                        </div>
                         <div class="pc-required-hint" id="pcRequiredHint">⚠️ Please select a PC before submitting.</div>
                     </div>
                 </div>
@@ -1114,29 +1192,39 @@ $purpose_options = [
 </div><!-- /page-wrap -->
 
 <script>
-// ── Lab change: load PCs for selected lab ─────────────────────────
-async function handleLabChange(labName) {
-    const pcSection = document.getElementById('pcSection');
-    const pcGrid    = document.getElementById('pcGrid');
-    const pcInput   = document.getElementById('pcNumberInput');
-    const pcInfo    = document.getElementById('pcSelectedInfo');
-    const pcHint    = document.getElementById('pcRequiredHint');
+// ── Temp PC selection inside modal ───────────────────────────────
+let _pendingPcNumber = '';
 
-    // Reset PC selection
-    pcInput.value = '';
-    pcInfo.classList.remove('visible');
-    pcHint.classList.remove('visible');
+// ── Lab change: show picker button, pre-load grid ─────────────────
+async function handleLabChange(labName) {
+    const wrap  = document.getElementById('pcPickerWrap');
+    const input = document.getElementById('pcNumberInput');
+    const hint  = document.getElementById('pcRequiredHint');
+    const btn   = document.getElementById('btnPickPc');
+
+    // Reset
+    input.value      = '';
+    _pendingPcNumber = '';
+    hint.classList.remove('visible');
+    btn.className    = 'btn-pick-pc';
+    btn.textContent  = '🖥️ Click to choose a PC';
 
     if (!labName) {
-        pcSection.classList.remove('visible');
+        wrap.classList.remove('visible');
         return;
     }
 
-    pcSection.classList.add('visible');
+    wrap.classList.add('visible');
+    // Pre-load grid in background so modal opens instantly
+    await loadPcGrid(labName);
+}
+
+// ── Load PC grid into modal ───────────────────────────────────────
+async function loadPcGrid(labName) {
+    const pcGrid = document.getElementById('pcGrid');
     pcGrid.innerHTML = '<div class="pc-loading"><span class="spin"></span> Loading PCs…</div>';
 
     try {
-        // ── FIXED: use get_pc_status which actually exists in admin_reservation.php ──
         const res  = await fetch('/SYSARCH/admin/admin_reservation.php?ajax=get_pc_status&lab=' + encodeURIComponent(labName));
         const data = await res.json();
 
@@ -1147,47 +1235,92 @@ async function handleLabChange(labName) {
 
         pcGrid.innerHTML = '';
         data.pcs.forEach(pc => {
-            // get_pc_status returns { pc: N, status: '...' }
             const isAvailable = pc.status === 'available';
             const btn = document.createElement('button');
-            btn.type = 'button';
+            btn.type      = 'button';
             btn.className = 'pc-btn ' + (isAvailable ? 'available' : 'taken');
             btn.dataset.pc = pc.pc;
-            btn.disabled = !isAvailable;
+            btn.disabled  = !isAvailable;
             btn.innerHTML = `<span class="pc-icon">${isAvailable ? '🖥️' : '🚫'}</span><span class="pc-num">PC ${pc.pc}</span>`;
 
             if (isAvailable) {
-                btn.addEventListener('click', () => selectPC(pc.pc, btn));
+                btn.addEventListener('click', () => selectPcInModal(pc.pc, btn));
             }
-
             pcGrid.appendChild(btn);
         });
+
+        // Re-highlight if a PC was already committed
+        const committed = document.getElementById('pcNumberInput').value;
+        if (committed) {
+            const existing = pcGrid.querySelector(`[data-pc="${committed}"]`);
+            if (existing && existing.classList.contains('available')) {
+                existing.classList.add('selected');
+                _pendingPcNumber = committed;
+                updateModalFooter(committed);
+            }
+        }
 
     } catch (e) {
         pcGrid.innerHTML = '<div class="pc-loading" style="color:var(--red);">⚠️ Failed to load PCs. Please refresh.</div>';
     }
 }
 
-function selectPC(pcNumber, btnEl) {
-    // Deselect all
-    document.querySelectorAll('.pc-btn.selected').forEach(b => b.classList.remove('selected'));
-
-    // Select this one
+// ── Select a PC inside the modal ──────────────────────────────────
+function selectPcInModal(pcNumber, btnEl) {
+    document.querySelectorAll('#pcGrid .pc-btn.selected').forEach(b => b.classList.remove('selected'));
     btnEl.classList.add('selected');
-
-    // Update hidden input
-    const pcInput = document.getElementById('pcNumberInput');
-    pcInput.value = pcNumber;
-
-    // Show selected info
-    const pcInfo  = document.getElementById('pcSelectedInfo');
-    const pcLabel = document.getElementById('pcSelectedLabel');
-    pcLabel.textContent = 'PC ' + pcNumber + ' selected';
-    pcInfo.classList.add('visible');
-
-    // Hide hint if showing
-    document.getElementById('pcRequiredHint').classList.remove('visible');
+    _pendingPcNumber = pcNumber;
+    updateModalFooter(pcNumber);
 }
+
+function updateModalFooter(pcNumber) {
+    const label   = document.getElementById('pcModalSelLabel');
+    const confirm = document.getElementById('btnConfirmPc');
+    label.textContent = '🖥️ PC ' + pcNumber + ' selected';
+    label.classList.add('chosen');
+    confirm.disabled = false;
+}
+
+// ── Open PC modal ─────────────────────────────────────────────────
+function openPcModal() {
+    const labName = document.getElementById('labSelect').value;
+    if (!labName) return;
+    document.getElementById('pcModalLabName').textContent = labName;
+    document.getElementById('pcModal').classList.add('open');
+    // Reload grid (in case lab changed or status updated)
+    loadPcGrid(labName);
+}
+
+// ── Close PC modal (discard pending) ─────────────────────────────
+function closePcModal() {
+    document.getElementById('pcModal').classList.remove('open');
+    _pendingPcNumber = '';
+    const label   = document.getElementById('pcModalSelLabel');
+    const confirm = document.getElementById('btnConfirmPc');
+    label.textContent = 'No PC selected yet';
+    label.classList.remove('chosen');
+    confirm.disabled = true;
+}
+
+// ── Confirm PC selection ──────────────────────────────────────────
+function confirmPcSelection() {
+    if (!_pendingPcNumber) return;
+
+    document.getElementById('pcNumberInput').value = _pendingPcNumber;
+    document.getElementById('pcRequiredHint').classList.remove('visible');
+
+    const btn = document.getElementById('btnPickPc');
+    btn.className   = 'btn-pick-pc has-selection';
+    btn.textContent = '✓ PC ' + _pendingPcNumber + ' selected — click to change';
+
+    document.getElementById('pcModal').classList.remove('open');
+    _pendingPcNumber = '';
+}
+
+// ── Backdrop click closes PC modal ────────────────────────────────
+document.getElementById('pcModal').addEventListener('click', function(e) {
+    if (e.target === this) closePcModal();
+});
 
 // ── Purpose dropdown ──────────────────────────────────────────────
 function handlePurposeChange(sel) {
@@ -1216,18 +1349,16 @@ function updateCustomCount() {
 
 // ── Form validation ───────────────────────────────────────────────
 function validateReservationForm() {
-    // Validate PC selection
     const pcInput = document.getElementById('pcNumberInput');
-    const pcSection = document.getElementById('pcSection');
-    const pcHint  = document.getElementById('pcRequiredHint');
+    const wrap    = document.getElementById('pcPickerWrap');
+    const hint    = document.getElementById('pcRequiredHint');
 
-    if (pcSection.classList.contains('visible') && !pcInput.value) {
-        pcHint.classList.add('visible');
-        pcSection.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    if (wrap.classList.contains('visible') && !pcInput.value) {
+        hint.classList.add('visible');
+        wrap.scrollIntoView({ behavior: 'smooth', block: 'center' });
         return false;
     }
 
-    // Validate custom purpose
     const sel = document.getElementById('purposeSelect');
     if (sel.value === 'other') {
         const custom = document.getElementById('purposeCustom');
@@ -1237,7 +1368,7 @@ function validateReservationForm() {
             return false;
         }
         custom.style.borderColor = '';
-        sel.name = '';
+        sel.name    = '';
         custom.name = 'purpose';
     }
     return true;
@@ -1303,7 +1434,10 @@ document.getElementById('cancelModal').addEventListener('click', function(e) {
 });
 
 document.addEventListener('keydown', function(e) {
-    if (e.key === 'Escape') closeModal();
+    if (e.key === 'Escape') {
+        closeModal();
+        closePcModal();
+    }
 });
 
 // ── Auto-dismiss alerts ───────────────────────────────────────────
