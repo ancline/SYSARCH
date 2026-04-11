@@ -21,7 +21,7 @@ $student_id = $_SESSION['student_id'];
 // ── Fetch sit-in history ──
 $history = [];
 $stmt = $conn->prepare("
-    SELECT s.lab, s.purpose, s.student_name, s.sessions,
+    SELECT s.id, s.lab, s.purpose, s.student_name, s.sessions,
            s.time_in, s.time_out,
            TIMESTAMPDIFF(MINUTE, s.time_in, COALESCE(s.time_out, NOW())) AS duration_min
     FROM sitin s
@@ -46,6 +46,33 @@ $total_hours    = round($total_minutes / 60, 1);
 
 // Unique labs visited
 $labs_visited = count(array_unique(array_filter(array_column($history, 'lab'))));
+
+// ── Check which sitin IDs already have feedback ──
+$feedback_ids = [];
+$conn->query("
+    CREATE TABLE IF NOT EXISTS feedback (
+        id         INT AUTO_INCREMENT PRIMARY KEY,
+        sitin_id   INT NOT NULL,
+        student_id VARCHAR(50) NOT NULL,
+        message    TEXT NOT NULL,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+");
+if ($total_sessions > 0) {
+    $sitin_ids = array_column($history, 'id');
+    $placeholders = implode(',', array_fill(0, count($sitin_ids), '?'));
+    $types = str_repeat('i', count($sitin_ids));
+    $fstmt = $conn->prepare("SELECT sitin_id FROM feedback WHERE student_id = ? AND sitin_id IN ($placeholders)");
+    $bind_params = array_merge([$student_id], $sitin_ids);
+    $bind_types = 's' . $types;
+    $fstmt->bind_param($bind_types, ...$bind_params);
+    $fstmt->execute();
+    $fres = $fstmt->get_result();
+    while ($frow = $fres->fetch_assoc()) {
+        $feedback_ids[] = (int)$frow['sitin_id'];
+    }
+    $fstmt->close();
+}
 
 // Unread notifications count (for badge)
 $unread_count = 0;
@@ -371,6 +398,32 @@ $conn->close();
 
         .status-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
 
+        /* ── FEEDBACK BUTTON ── */
+        .btn-feedback {
+            padding: 4px 11px;
+            background: var(--tag-bg);
+            color: var(--navy-light);
+            border: 1.5px solid var(--border);
+            border-radius: 6px; font-size: 12px; font-weight: 600;
+            font-family: 'DM Sans', sans-serif;
+            cursor: pointer;
+            transition: background 0.15s, border-color 0.15s, color 0.15s;
+            white-space: nowrap;
+        }
+
+        .btn-feedback:hover { background: #d6e0f5; border-color: var(--accent); color: var(--accent); }
+
+        .btn-feedback.submitted {
+            background: var(--green-bg); color: var(--green);
+            border-color: #a8e8ce; cursor: default;
+        }
+
+        /* ── STATUS+FEEDBACK CELL ── */
+        .status-cell {
+            display: flex; align-items: center; justify-content: center;
+            gap: 8px; flex-wrap: wrap;
+        }
+
         /* ── EMPTY STATE ── */
         .empty-state {
             text-align: center; padding: 60px 24px;
@@ -407,6 +460,133 @@ $conn->close();
 
         .table-footer-info { font-size: 12px; color: var(--muted); font-weight: 500; }
 
+        /* ── FEEDBACK MODAL ── */
+        .modal-overlay {
+            display: none; position: fixed; inset: 0;
+            background: rgba(10,20,50,0.45);
+            backdrop-filter: blur(3px);
+            z-index: 999; align-items: center; justify-content: center;
+        }
+
+        .modal-overlay.open { display: flex; }
+
+        .modal {
+            background: var(--panel); border-radius: 16px;
+            box-shadow: 0 20px 60px rgba(15,38,83,0.25);
+            width: 100%; max-width: 480px; overflow: hidden;
+            animation: modalIn 0.25s ease both;
+        }
+
+        @keyframes modalIn {
+            from { opacity: 0; transform: translateY(-16px) scale(0.97); }
+            to   { opacity: 1; transform: translateY(0) scale(1); }
+        }
+
+        .modal-header {
+            background: linear-gradient(135deg, var(--navy) 0%, var(--navy-light) 100%);
+            padding: 16px 22px;
+            display: flex; align-items: center; justify-content: space-between;
+        }
+
+        .modal-header h3 { font-size: 15px; font-weight: 700; color: white; }
+
+        .modal-close {
+            background: rgba(255,255,255,0.15); border: none; color: white;
+            width: 28px; height: 28px; border-radius: 6px; font-size: 16px;
+            cursor: pointer; display: flex; align-items: center; justify-content: center;
+            transition: background 0.15s; font-family: 'DM Sans', sans-serif;
+        }
+
+        .modal-close:hover { background: rgba(255,255,255,0.28); }
+
+        .modal-body { padding: 22px 24px 12px; }
+
+        .modal-session-info {
+            background: var(--tag-bg); border: 1px solid var(--border);
+            border-radius: 9px; padding: 10px 14px;
+            font-size: 12.5px; color: var(--muted);
+            margin-bottom: 16px;
+        }
+
+        .modal-session-info strong { color: var(--navy); }
+
+        .textarea-wrap {
+            border: 1.5px solid var(--border); border-radius: 9px;
+            overflow: hidden; background: var(--bg);
+            transition: border-color 0.18s, box-shadow 0.18s;
+        }
+
+        .textarea-wrap:focus-within {
+            border-color: var(--accent);
+            box-shadow: 0 0 0 3px rgba(59,111,212,0.1);
+            background: white;
+        }
+
+        .textarea-wrap textarea {
+            width: 100%; border: none; background: transparent;
+            padding: 12px 14px; font-size: 13.5px;
+            font-family: 'DM Sans', sans-serif;
+            color: var(--text); outline: none;
+            resize: vertical; min-height: 110px;
+            display: block;
+        }
+
+        .char-count {
+            padding: 4px 14px 8px;
+            font-size: 11px; color: var(--muted);
+            text-align: right;
+        }
+
+        .modal-error {
+            color: var(--red); font-size: 12px;
+            margin-top: 8px; display: none; font-weight: 500;
+        }
+
+        .modal-footer {
+            padding: 14px 24px 20px;
+            display: flex; justify-content: flex-end; gap: 10px;
+        }
+
+        .btn-cancel {
+            padding: 9px 22px; background: white; color: var(--text);
+            border: 1.5px solid var(--border); border-radius: 8px;
+            font-size: 13px; font-weight: 600;
+            font-family: 'DM Sans', sans-serif; cursor: pointer;
+            transition: background 0.15s;
+        }
+
+        .btn-cancel:hover { background: var(--tag-bg); }
+
+        .btn-submit {
+            padding: 9px 24px;
+            background: linear-gradient(135deg, var(--navy), var(--navy-light));
+            color: white; border: none; border-radius: 8px;
+            font-size: 13px; font-weight: 700;
+            font-family: 'DM Sans', sans-serif; cursor: pointer;
+            box-shadow: 0 3px 10px rgba(15,38,83,0.22);
+            transition: transform 0.15s, box-shadow 0.15s, opacity 0.15s;
+        }
+
+        .btn-submit:hover { transform: translateY(-1px); box-shadow: 0 5px 16px rgba(15,38,83,0.32); }
+        .btn-submit:disabled { opacity: 0.45; cursor: not-allowed; transform: none; }
+
+        /* ── TOAST ── */
+        .fb-toast {
+            display: none; position: fixed; top: 72px; right: 24px;
+            padding: 12px 20px; border-radius: 10px;
+            font-size: 13px; font-weight: 600; color: white;
+            z-index: 9999; box-shadow: 0 4px 16px rgba(0,0,0,0.2);
+            animation: toastIn 0.3s ease both;
+        }
+
+        .fb-toast.success { background: #1a7a4a; }
+        .fb-toast.error   { background: #c0392b; }
+
+        @keyframes toastIn {
+            from { opacity: 0; transform: translateX(20px); }
+            to   { opacity: 1; transform: translateX(0); }
+        }
+
         @keyframes fadeUp {
             from { opacity: 0; transform: translateY(16px); }
             to   { opacity: 1; transform: translateY(0); }
@@ -416,6 +596,7 @@ $conn->close();
             .page-wrap { padding: 16px; }
             .stats-row { grid-template-columns: 1fr; }
             .filter-bar input[type="text"] { width: 140px; }
+            .status-cell { flex-direction: column; gap: 4px; }
         }
     </style>
 </head>
@@ -550,8 +731,10 @@ $conn->close();
                 </thead>
                 <tbody id="historyBody">
                     <?php foreach ($history as $i => $row):
-                        $is_ongoing = empty($row['time_out']);
-                        $dur = (int)$row['duration_min'];
+                        $is_ongoing  = empty($row['time_out']);
+                        $dur         = (int)$row['duration_min'];
+                        $sitin_id    = (int)$row['id'];
+                        $has_feedback = in_array($sitin_id, $feedback_ids);
 
                         if ($dur < 60)       $dur_label = $dur . 'm';
                         elseif ($dur < 120)  $dur_label = '1h ' . ($dur - 60) . 'm';
@@ -563,6 +746,9 @@ $conn->close();
                         $day_fmt    = $row['time_in'] ? date('l', strtotime($row['time_in'])) : '';
                         $login_fmt  = $row['time_in']  ? date('h:i A', strtotime($row['time_in']))  : '—';
                         $logout_fmt = $row['time_out'] ? date('h:i A', strtotime($row['time_out'])) : '—';
+
+                        // Escape for JS
+                        $js_label = addslashes($date_fmt . ' – ' . ($row['lab'] ?? ''));
                     ?>
                     <tr data-lab="<?= htmlspecialchars($row['lab'] ?? '') ?>"
                         data-status="<?= $is_ongoing ? 'ongoing' : 'done' ?>"
@@ -597,11 +783,22 @@ $conn->close();
                             <?php endif; ?>
                         </td>
                         <td class="center">
-                            <?php if ($is_ongoing): ?>
-                            <span class="status-pill ongoing"><span class="status-dot"></span> Ongoing</span>
-                            <?php else: ?>
-                            <span class="status-pill done"><span class="status-dot"></span> Done</span>
-                            <?php endif; ?>
+                            <div class="status-cell">
+                                <?php if ($is_ongoing): ?>
+                                <span class="status-pill ongoing"><span class="status-dot"></span> Ongoing</span>
+                                <?php else: ?>
+                                <span class="status-pill done"><span class="status-dot"></span> Done</span>
+                                <?php endif; ?>
+
+                                <?php if ($has_feedback): ?>
+                                <button class="btn-feedback submitted" disabled>✅ Feedback Sent</button>
+                                <?php else: ?>
+                                <button class="btn-feedback"
+                                    onclick="openFeedbackModal(<?= $sitin_id ?>, '<?= $js_label ?>')">
+                                    💬 Feedback
+                                </button>
+                                <?php endif; ?>
+                            </div>
                         </td>
                     </tr>
                     <?php endforeach; ?>
@@ -621,6 +818,36 @@ $conn->close();
 
 </div><!-- /page-wrap -->
 
+<!-- ── FEEDBACK MODAL ── -->
+<div class="modal-overlay" id="feedbackModal">
+    <div class="modal">
+        <div class="modal-header">
+            <h3>💬 Leave Feedback</h3>
+            <button class="modal-close" onclick="closeFeedbackModal()">&#x2715;</button>
+        </div>
+        <div class="modal-body">
+            <div class="modal-session-info">
+                Session: <strong id="fb_session_label"></strong>
+            </div>
+            <div class="textarea-wrap">
+                <textarea id="fb_message"
+                    placeholder="Write your feedback here…"
+                    maxlength="1000"
+                    oninput="updateCharCount()"></textarea>
+                <div class="char-count"><span id="charCount">0</span> / 1000</div>
+            </div>
+            <p class="modal-error" id="fb_error">Please write a message before submitting.</p>
+        </div>
+        <div class="modal-footer">
+            <button class="btn-cancel" onclick="closeFeedbackModal()">Cancel</button>
+            <button class="btn-submit" id="btn_submit_fb" onclick="submitFeedback()">Submit Feedback</button>
+        </div>
+    </div>
+</div>
+
+<!-- FEEDBACK TOAST -->
+<div class="fb-toast" id="fb_toast"></div>
+
 <script>
     const ROWS_PER_PAGE = 10;
     let currentPage = 1;
@@ -631,8 +858,8 @@ $conn->close();
     }
 
     function applyFilters() {
-        const search     = document.getElementById('searchInput').value.toLowerCase().trim();
-        const labFilter  = document.getElementById('labFilter').value;
+        const search       = document.getElementById('searchInput').value.toLowerCase().trim();
+        const labFilter    = document.getElementById('labFilter').value;
         const statusFilter = document.getElementById('statusFilter').value;
 
         visibleRows = [];
@@ -674,11 +901,9 @@ $conn->close();
         const pg = document.getElementById('pagination');
         pg.innerHTML = '';
 
-        // Prev
         const prev = makePgBtn('‹', currentPage > 1, function() { currentPage--; paginate(); });
         pg.appendChild(prev);
 
-        // Page numbers
         for (let p = 1; p <= totalPages; p++) {
             if (totalPages > 7 && p > 2 && p < totalPages - 1 && Math.abs(p - currentPage) > 1) {
                 if (p === 3 || p === totalPages - 2) {
@@ -694,7 +919,6 @@ $conn->close();
             pg.appendChild(btn);
         }
 
-        // Next
         const next = makePgBtn('›', currentPage < totalPages, function() { currentPage++; paginate(); });
         pg.appendChild(next);
     }
@@ -709,8 +933,8 @@ $conn->close();
     }
 
     function resetFilters() {
-        document.getElementById('searchInput').value = '';
-        document.getElementById('labFilter').value   = '';
+        document.getElementById('searchInput').value  = '';
+        document.getElementById('labFilter').value    = '';
         document.getElementById('statusFilter').value = '';
         applyFilters();
     }
@@ -718,6 +942,89 @@ $conn->close();
     // Init
     visibleRows = getRows();
     paginate();
+
+    // ── FEEDBACK MODAL ──
+    let fb_sitin_id = null;
+
+    function openFeedbackModal(sitinId, label) {
+        fb_sitin_id = sitinId;
+        document.getElementById('fb_session_label').textContent = label;
+        document.getElementById('fb_message').value = '';
+        document.getElementById('fb_error').style.display = 'none';
+        document.getElementById('charCount').textContent = '0';
+        document.getElementById('btn_submit_fb').disabled = false;
+        document.getElementById('feedbackModal').classList.add('open');
+        setTimeout(() => document.getElementById('fb_message').focus(), 120);
+    }
+
+    function closeFeedbackModal() {
+        document.getElementById('feedbackModal').classList.remove('open');
+        fb_sitin_id = null;
+    }
+
+    function updateCharCount() {
+        const len = document.getElementById('fb_message').value.length;
+        document.getElementById('charCount').textContent = len;
+    }
+
+    function submitFeedback() {
+        const msg = document.getElementById('fb_message').value.trim();
+        if (!msg) {
+            document.getElementById('fb_error').style.display = 'block';
+            return;
+        }
+
+        document.getElementById('fb_error').style.display = 'none';
+        const btn = document.getElementById('btn_submit_fb');
+        btn.disabled = true;
+        btn.textContent = 'Submitting…';
+
+        fetch('/SYSARCH/user/submit_feedback.php', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ sitin_id: fb_sitin_id, message: msg })
+        })
+        .then(r => r.json())
+        .then(data => {
+            closeFeedbackModal();
+
+            if (data.success) {
+                // Update the button in the table row to "Feedback Sent"
+                const allBtns = document.querySelectorAll('.btn-feedback');
+                allBtns.forEach(b => {
+                    if (b.getAttribute('onclick') && b.getAttribute('onclick').includes('(' + fb_sitin_id + ',')) {
+                        b.textContent = '✅ Feedback Sent';
+                        b.classList.add('submitted');
+                        b.disabled = true;
+                        b.removeAttribute('onclick');
+                    }
+                });
+                showToast('✅ Feedback submitted successfully!', 'success');
+            } else {
+                showToast('❌ ' + (data.error || 'Failed to submit feedback.'), 'error');
+            }
+        })
+        .catch(() => {
+            closeFeedbackModal();
+            showToast('❌ Network error. Please try again.', 'error');
+        });
+    }
+
+    function showToast(message, type) {
+        const toast = document.getElementById('fb_toast');
+        toast.textContent = message;
+        toast.className = 'fb-toast ' + type;
+        toast.style.display = 'block';
+        setTimeout(() => { toast.style.display = 'none'; }, 3500);
+    }
+
+    document.getElementById('feedbackModal').addEventListener('click', function(e) {
+        if (e.target === this) closeFeedbackModal();
+    });
+
+    document.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape') closeFeedbackModal();
+    });
 </script>
 
 </body>

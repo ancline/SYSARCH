@@ -1,7 +1,7 @@
 <?php
 session_start();
 
-define('BASE_PATH', '/SYSARCH/');
+define('BASE_PATH', '/SYSARCH/user/');
 
 // Guard: must be logged in
 if (!isset($_SESSION['student_id'])) {

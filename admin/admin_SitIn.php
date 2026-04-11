@@ -577,7 +577,7 @@ $conn->close();
                 <h3>Sit In Form</h3>
                 <button class="modal-close" onclick="closeSitInModal()">&#x2715;</button>
             </div>
-            <form action="process_sitin.php" method="POST">
+            <form action="/SYSARCH/admin/process_sitin.php" method="POST">
                 <div class="modal-body">
 
                     <div class="modal-field">
@@ -781,7 +781,7 @@ $conn->close();
     // ── TIME OUT: sets time_out for this sit-in record ──
     function timeOut(id) {
         if (confirm('Mark this student as timed out? They will be removed from the active list.')) {
-            window.location.href = 'timeout_sitin.php?id=' + id + '&redirect=admin_SitIn.php';
+            window.location.href = '/SYSARCH/timeout_sitin.php?id=' + id + '&redirect=admin_SitIn.php';
         }
     }
 

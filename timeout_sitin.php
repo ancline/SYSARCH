@@ -35,5 +35,5 @@ if ($id > 0) {
 $conn->close();
 
 // After timeout, redirect back — admin_SitIn.php will now show one fewer active record
-header('Location: ' . $redirect);
+header('Location: /SYSARCH/admin/' . $redirect);
 exit();
