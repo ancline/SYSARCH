@@ -59,7 +59,7 @@ if ($result) {
 $total_feedback = count($feedbacks);
 
 // ── Stats ──
-$unique_students = count(array_unique(array_column($feedbacks, 'student_id')));
+
 $labs = array_filter(array_column($feedbacks, 'lab'));
 $top_lab = !empty($labs) ? array_search(max(array_count_values($labs)), array_count_values($labs)) : '—';
 
@@ -189,7 +189,6 @@ $conn->close();
         }
 
         .sp-icon.blue  { background: linear-gradient(135deg, var(--navy-light), var(--accent)); }
-        .sp-icon.green { background: linear-gradient(135deg, #0fa86a, var(--green)); }
         .sp-icon.gold  { background: linear-gradient(135deg, var(--orange), var(--gold)); }
 
         .sp-value { font-family: 'DM Serif Display', serif; font-size: 24px; color: var(--navy); line-height: 1; }
@@ -479,13 +478,7 @@ $conn->close();
                 <div class="sp-label">Total Feedback</div>
             </div>
         </div>
-        <div class="stat-pill">
-            <div class="sp-icon green">👤</div>
-            <div>
-                <div class="sp-value"><?= $unique_students ?></div>
-                <div class="sp-label">Unique Students</div>
-            </div>
-        </div>
+    
         <div class="stat-pill">
             <div class="sp-icon gold">🏛️</div>
             <div>
