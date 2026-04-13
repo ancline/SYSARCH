@@ -398,7 +398,7 @@ $available_lab_options = array_diff($all_lab_options, $existing_lab_names);
         .no-labs-notice{font-size:11.5px;color:var(--green);background:var(--green-light);border:1px solid #b2e8cc;border-radius:7px;padding:7px 12px;display:flex;align-items:center;gap:5px;font-weight:600}
 
         /* ── LAB CARDS (stacked vertically in left column) ── */
-        .lab-list{display:flex;flex-direction:column;gap:10px;max-height:calc(100vh - 320px);overflow-y:auto;padding-right:2px}
+        .lab-list{display:flex;flex-direction:column;gap:10px;padding-right:2px}
         .lab-list::-webkit-scrollbar{width:5px}
         .lab-list::-webkit-scrollbar-track{background:transparent}
         .lab-list::-webkit-scrollbar-thumb{background:var(--border);border-radius:10px}

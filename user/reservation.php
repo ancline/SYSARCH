@@ -433,7 +433,7 @@ $purpose_options = [
         .notif-loading-state { text-align: center; padding: 30px; font-size: 12.5px; color: var(--muted); }
 
         /* ── PAGE ── */
-        .page-wrap { padding: 24px 28px; max-width: 1200px; margin: 0 auto; }
+        .page-wrap { padding: 24px 28px; max-width: 1600px; margin: 0 auto; }
 
         .page-header {
             display: flex; align-items: center; gap: 14px;
@@ -495,7 +495,7 @@ $purpose_options = [
         /* ── MAIN GRID ── */
         .main-grid {
             display: grid;
-            grid-template-columns: 420px 1fr;
+            grid-template-columns: 380px 1fr;
             gap: 20px;
             align-items: start;
         }
