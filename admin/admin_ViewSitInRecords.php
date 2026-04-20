@@ -462,7 +462,7 @@ $conn->close();
         <a href="/SYSARCH/admin/admin_SitIn.php">Sit-in</a>
         <a href="/SYSARCH/admin/admin_ViewSitInRecords.php" class="active">View Sit-in Records</a>
         <a href="/SYSARCH/admin/admin_SitInReports.php">Sit-in Reports</a>
-        <a href="#">Feedback Reports</a>
+        <a href="/SYSARCH/admin/admin_Feedback.php">Feedback Reports</a>
         <a href="/SYSARCH/admin/admin_reservation.php">Reservation</a>
         <a href="/SYSARCH/landingpage.php" class="btn-logout">Log out</a>
     </div>
