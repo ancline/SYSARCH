@@ -141,18 +141,40 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
     $res_id = (int)($_POST['res_id'] ?? 0);
 
     if ($_POST['action'] === 'approve' && $res_id > 0) {
-        $res_row = $conn->query("SELECT lab, pc_number FROM reservations WHERE id=$res_id AND status='pending'")->fetch_assoc();
+        $res_row = $conn->query("SELECT student_id, lab, pc_number FROM reservations WHERE id=$res_id AND status='pending'")->fetch_assoc();
         if ($res_row) {
             $conn->begin_transaction();
             try {
                 $conn->query("UPDATE reservations SET status='approved' WHERE id=$res_id");
                 $pc_num = (int)($res_row['pc_number'] ?? 0);
                 $lab_e  = $conn->real_escape_string($res_row['lab']);
+                $student_id = $res_row['student_id'];
                 if ($pc_num > 0) {
                     $conn->query("INSERT INTO lab_pc_status (lab, pc_number, status)
                                   VALUES ('$lab_e', $pc_num, 'in_use')
                                   ON DUPLICATE KEY UPDATE status='in_use', updated_at=NOW()");
                 }
+                // Create notification for the student
+                $conn->query("
+                    CREATE TABLE IF NOT EXISTS notifications (
+                        id         INT AUTO_INCREMENT PRIMARY KEY,
+                        student_id VARCHAR(50),
+                        type       VARCHAR(30) DEFAULT 'announcement',
+                        subtype    VARCHAR(30) DEFAULT NULL,
+                        title      VARCHAR(255),
+                        message    TEXT,
+                        is_read    TINYINT(1) DEFAULT 0,
+                        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                    )
+                ");
+                $pc_label = $pc_num > 0 ? " PC $pc_num has been reserved." : '';
+                $notif_msg = "Your reservation has been approved.$pc_label";
+                $notif_title = "Reservation Approved";
+                $notif_subtype = "reservation-approved";
+                $stmt = $conn->prepare("INSERT INTO notifications (student_id, type, subtype, title, message) VALUES (?, 'reservation', ?, ?, ?)");
+                $stmt->bind_param('ssss', $student_id, $notif_subtype, $notif_title, $notif_msg);
+                $stmt->execute();
+                $stmt->close();
                 $conn->commit();
                 $pc_label = $pc_num > 0 ? " PC $pc_num is now marked <strong>Reserved</strong>." : '';
                 $success_msg = "Reservation approved.$pc_label";
@@ -166,17 +188,38 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
     }
 
     if ($_POST['action'] === 'reject' && $res_id > 0) {
-        $res_row = $conn->query("SELECT lab, pc_number, status FROM reservations WHERE id=$res_id")->fetch_assoc();
+        $res_row = $conn->query("SELECT student_id, lab, pc_number, status FROM reservations WHERE id=$res_id")->fetch_assoc();
         if ($res_row) {
             $conn->begin_transaction();
             try {
                 $conn->query("UPDATE reservations SET status='rejected' WHERE id=$res_id AND status='pending'");
                 $pc_num = (int)($res_row['pc_number'] ?? 0);
                 $lab_e  = $conn->real_escape_string($res_row['lab']);
+                $student_id = $res_row['student_id'];
                 if ($pc_num > 0 && $res_row['status'] === 'approved') {
                     $conn->query("UPDATE lab_pc_status SET status='available', updated_at=NOW()
                                   WHERE lab='$lab_e' AND pc_number=$pc_num");
                 }
+                // Create notification for the student
+                $conn->query("
+                    CREATE TABLE IF NOT EXISTS notifications (
+                        id         INT AUTO_INCREMENT PRIMARY KEY,
+                        student_id VARCHAR(50),
+                        type       VARCHAR(30) DEFAULT 'announcement',
+                        subtype    VARCHAR(30) DEFAULT NULL,
+                        title      VARCHAR(255),
+                        message    TEXT,
+                        is_read    TINYINT(1) DEFAULT 0,
+                        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                    )
+                ");
+                $notif_msg = "Your reservation has been rejected.";
+                $notif_title = "Reservation Rejected";
+                $notif_subtype = "reservation-rejected";
+                $stmt = $conn->prepare("INSERT INTO notifications (student_id, type, subtype, title, message) VALUES (?, 'reservation', ?, ?, ?)");
+                $stmt->bind_param('ssss', $student_id, $notif_subtype, $notif_title, $notif_msg);
+                $stmt->execute();
+                $stmt->close();
                 $conn->commit();
                 $success_msg = 'Reservation rejected.';
             } catch (Exception $e) {
