@@ -462,12 +462,12 @@ $available_lab_options = array_diff($all_lab_options, $existing_lab_names);
         .table-wrap{overflow-x:auto}
         table{width:100%;border-collapse:collapse;font-size:13px}
         thead tr{background:var(--tag-bg);border-bottom:2px solid var(--border)}
-        thead th{padding:10px 12px;text-align:left;font-size:10.5px;font-weight:700;color:var(--navy);text-transform:uppercase;letter-spacing:0.5px;white-space:nowrap}
+        thead th{padding:10px 8px;text-align:left;font-size:10.5px;font-weight:700;color:var(--navy);text-transform:uppercase;letter-spacing:0.5px;white-space:nowrap}
         thead th.center{text-align:center}
         tbody tr{border-bottom:1px solid #f0f3f9;transition:background 0.14s}
         tbody tr:last-child{border-bottom:none}
         tbody tr:hover{background:#f5f7fd}
-        tbody td{padding:10px 12px;vertical-align:middle}
+        tbody td{padding:8px 8px;vertical-align:middle}
         tbody td.center{text-align:center}
         .student-cell .s-name{font-weight:700;color:var(--navy);font-size:12.5px}
         .student-cell .s-id{font-size:10.5px;color:var(--muted);margin-top:1px}
@@ -484,8 +484,8 @@ $available_lab_options = array_diff($all_lab_options, $existing_lab_names);
         .status-pill.rejected{background:var(--red-light);color:var(--red)}
         .status-pill.cancelled{background:#f0f3f9;color:var(--muted)}
         .status-dot{width:6px;height:6px;border-radius:50%;background:currentColor}
-        .action-btns{display:flex;gap:5px;justify-content:center;align-items:center;flex-wrap:wrap}
-        .btn-approve,.btn-reject,.btn-delete,.btn-pc{padding:4px 10px;border-radius:6px;font-size:11px;font-weight:700;font-family:'DM Sans',sans-serif;cursor:pointer;border:none;transition:opacity 0.15s,transform 0.15s}
+        .action-btns{display:flex;gap:3px;justify-content:center;align-items:center;flex-wrap:wrap;min-width:130px}
+        .btn-approve,.btn-reject,.btn-delete,.btn-pc{padding:3px 7px;border-radius:6px;font-size:10.5px;font-weight:700;font-family:'DM Sans',sans-serif;cursor:pointer;border:none;transition:opacity 0.15s,transform 0.15s}
         .btn-approve{background:var(--green-light);color:var(--green);border:1px solid #b2e8cc}
         .btn-reject{background:var(--orange-light);color:var(--orange);border:1px solid #fcd87a}
         .btn-delete{background:var(--red-light);color:var(--red);border:1px solid #f5c6cb}
@@ -565,7 +565,7 @@ $available_lab_options = array_diff($all_lab_options, $existing_lab_names);
         .pc-stat-chip.in_use .cs-value{color:#d97706}
         .pc-stat-chip.in_use .cs-label{color:#fbbf24}
         .pc-grid-label{font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:10px}
-        .pc-grid{display:grid;grid-template-columns:repeat(10,1fr);gap:8px;margin-bottom:20px}
+        .pc-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:8px;margin-bottom:20px}
         .pc-cell{aspect-ratio:1;border-radius:9px;border:2px solid transparent;display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:pointer;transition:transform 0.14s,box-shadow 0.14s;position:relative;min-height:48px;user-select:none}
         .pc-cell:hover{transform:scale(1.08);box-shadow:0 4px 12px rgba(0,0,0,0.15)}
         .pc-cell:active{transform:scale(0.96)}
