@@ -433,7 +433,7 @@ $purpose_options = [
         .notif-loading-state { text-align: center; padding: 30px; font-size: 12.5px; color: var(--muted); }
 
         /* ── PAGE ── */
-        .page-wrap { padding: 24px 28px; max-width: 1400px; margin: 0 auto; }
+        .page-wrap { padding: 24px 28px; max-width: 1200px; margin: 0 auto; }
 
         .page-header {
             display: flex; align-items: center; gap: 14px;
@@ -1229,6 +1229,7 @@ $purpose_options = [
                             '1:00 PM – 2:30 PM',
                             '2:30 PM – 4:00 PM',
                             '4:00 PM – 5:30 PM',
+                            '5:30 PM – 7:00 PM'
                         ];
                         foreach ($slots as $slot):
                             $sid = 'slot_' . preg_replace('/[^a-z0-9]/', '_', strtolower($slot));

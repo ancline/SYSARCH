@@ -106,12 +106,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['ajax']) && $_POST['aj
 
 if (isset($_GET['ajax']) && $_GET['ajax'] === 'get_configured_labs') {
     header('Content-Type: application/json');
+    $req_date  = $conn->real_escape_string($_GET['date']      ?? '');
+    $req_slot  = $conn->real_escape_string($_GET['time_slot'] ?? '');
     $result = $conn->query("SELECT lab_name, total_pcs FROM configured_labs WHERE is_active=1 AND pc_status_set=1 ORDER BY lab_name");
     $labs_out = [];
     if ($result) {
         while ($row = $result->fetch_assoc()) {
             $lab_esc = $conn->real_escape_string($row['lab_name']);
+            // Count admin-marked available PCs
             $avail = (int)$conn->query("SELECT COUNT(*) AS c FROM lab_pc_status WHERE lab='$lab_esc' AND status='available'")->fetch_assoc()['c'];
+            // Subtract PCs already booked for this date+time_slot
+            if ($req_date && $req_slot) {
+                $booked = (int)$conn->query("
+                    SELECT COUNT(DISTINCT pc_number) AS c FROM reservations
+                    WHERE lab='$lab_esc' AND date='$req_date' AND time_slot='$req_slot'
+                      AND status='approved' AND pc_number IS NOT NULL
+                ")->fetch_assoc()['c'];
+                $avail = max(0, $avail - $booked);
+            }
             if ($avail > 0) $labs_out[] = ['name' => $row['lab_name'], 'total_pcs' => $row['total_pcs'], 'available' => $avail];
         }
     }
@@ -121,12 +133,32 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === 'get_configured_labs') {
 
 if (isset($_GET['ajax']) && $_GET['ajax'] === 'get_available_pcs' && isset($_GET['lab'])) {
     header('Content-Type: application/json');
-    $lab = $conn->real_escape_string($_GET['lab']);
+    $lab       = $conn->real_escape_string($_GET['lab']);
+    $date      = $conn->real_escape_string($_GET['date']      ?? '');
+    $time_slot = $conn->real_escape_string($_GET['time_slot'] ?? '');
     $lab_row = $conn->query("SELECT id FROM configured_labs WHERE lab_name='$lab' AND is_active=1 AND pc_status_set=1")->fetch_assoc();
     if (!$lab_row) { echo json_encode(['success' => false, 'error' => 'Lab not available.']); $conn->close(); exit(); }
+
+    // Get all PCs set to 'available' in lab_pc_status (admin-configured as not broken)
     $result = $conn->query("SELECT pc_number FROM lab_pc_status WHERE lab='$lab' AND status='available' ORDER BY pc_number");
     $available = [];
     if ($result) while ($row = $result->fetch_assoc()) $available[] = (int)$row['pc_number'];
+
+    // If date+time_slot provided, remove PCs already booked for that exact slot
+    if ($date && $time_slot && !empty($available)) {
+        $booked_result = $conn->query("
+            SELECT pc_number FROM reservations
+            WHERE lab='$lab'
+              AND date='$date'
+              AND time_slot='$time_slot'
+              AND status='approved'
+              AND pc_number IS NOT NULL
+        ");
+        $booked = [];
+        if ($booked_result) while ($row = $booked_result->fetch_assoc()) $booked[] = (int)$row['pc_number'];
+        $available = array_values(array_diff($available, $booked));
+    }
+
     echo json_encode(['success' => true, 'available_pcs' => $available]);
     $conn->close(); exit();
 }
@@ -141,18 +173,51 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
     $res_id = (int)($_POST['res_id'] ?? 0);
 
     if ($_POST['action'] === 'approve' && $res_id > 0) {
-        $res_row = $conn->query("SELECT lab, pc_number FROM reservations WHERE id=$res_id AND status='pending'")->fetch_assoc();
+        $res_row = $conn->query("SELECT student_id, lab, pc_number, date, time_slot FROM reservations WHERE id=$res_id AND status='pending'")->fetch_assoc();
         if ($res_row) {
             $conn->begin_transaction();
             try {
                 $conn->query("UPDATE reservations SET status='approved' WHERE id=$res_id");
-                $pc_num = (int)($res_row['pc_number'] ?? 0);
-                $lab_e  = $conn->real_escape_string($res_row['lab']);
+                $pc_num    = (int)($res_row['pc_number'] ?? 0);
+                $lab_e     = $conn->real_escape_string($res_row['lab']);
+                $student_id = $res_row['student_id'];
+                $res_date  = $conn->real_escape_string($res_row['date']);
+                $res_slot  = $conn->real_escape_string($res_row['time_slot']);
+
                 if ($pc_num > 0) {
-                    $conn->query("INSERT INTO lab_pc_status (lab, pc_number, status)
-                                  VALUES ('$lab_e', $pc_num, 'in_use')
-                                  ON DUPLICATE KEY UPDATE status='in_use', updated_at=NOW()");
+                    // Only mark in_use if another approved reservation exists for the same PC/date/time_slot
+                    // (i.e. the PC is genuinely blocked right now for that slot)
+                    // For the newly approved one, we DON'T flip lab_pc_status to in_use globally —
+                    // availability is determined per date+time_slot via reservations table.
+                    // We only set in_use if there's a true double-booking conflict to flag.
+                    $conflict = $conn->query("
+                        SELECT COUNT(*) AS c FROM reservations
+                        WHERE lab='$lab_e' AND pc_number=$pc_num
+                          AND date='$res_date' AND time_slot='$res_slot'
+                          AND status='approved' AND id != $res_id
+                    ")->fetch_assoc()['c'];
+                    // No global in_use flip — per-slot availability is handled by get_available_pcs query
                 }
+                $conn->query("
+                    CREATE TABLE IF NOT EXISTS notifications (
+                        id         INT AUTO_INCREMENT PRIMARY KEY,
+                        student_id VARCHAR(50),
+                        type       VARCHAR(30) DEFAULT 'announcement',
+                        subtype    VARCHAR(30) DEFAULT NULL,
+                        title      VARCHAR(255),
+                        message    TEXT,
+                        is_read    TINYINT(1) DEFAULT 0,
+                        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                    )
+                ");
+                $pc_label = $pc_num > 0 ? " PC $pc_num has been reserved." : '';
+                $notif_msg = "Your reservation has been approved.$pc_label";
+                $notif_title = "Reservation Approved";
+                $notif_subtype = "reservation-approved";
+                $stmt = $conn->prepare("INSERT INTO notifications (student_id, type, subtype, title, message) VALUES (?, 'reservation', ?, ?, ?)");
+                $stmt->bind_param('ssss', $student_id, $notif_subtype, $notif_title, $notif_msg);
+                $stmt->execute();
+                $stmt->close();
                 $conn->commit();
                 $pc_label = $pc_num > 0 ? " PC $pc_num is now marked <strong>Reserved</strong>." : '';
                 $success_msg = "Reservation approved.$pc_label";
@@ -166,17 +231,34 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
     }
 
     if ($_POST['action'] === 'reject' && $res_id > 0) {
-        $res_row = $conn->query("SELECT lab, pc_number, status FROM reservations WHERE id=$res_id")->fetch_assoc();
+        $res_row = $conn->query("SELECT student_id, lab, pc_number, status FROM reservations WHERE id=$res_id")->fetch_assoc();
         if ($res_row) {
             $conn->begin_transaction();
             try {
                 $conn->query("UPDATE reservations SET status='rejected' WHERE id=$res_id AND status='pending'");
                 $pc_num = (int)($res_row['pc_number'] ?? 0);
                 $lab_e  = $conn->real_escape_string($res_row['lab']);
-                if ($pc_num > 0 && $res_row['status'] === 'approved') {
-                    $conn->query("UPDATE lab_pc_status SET status='available', updated_at=NOW()
-                                  WHERE lab='$lab_e' AND pc_number=$pc_num");
-                }
+                $student_id = $res_row['student_id'];
+                // No lab_pc_status update needed — availability is determined per date+time_slot via reservations
+                $conn->query("
+                    CREATE TABLE IF NOT EXISTS notifications (
+                        id         INT AUTO_INCREMENT PRIMARY KEY,
+                        student_id VARCHAR(50),
+                        type       VARCHAR(30) DEFAULT 'announcement',
+                        subtype    VARCHAR(30) DEFAULT NULL,
+                        title      VARCHAR(255),
+                        message    TEXT,
+                        is_read    TINYINT(1) DEFAULT 0,
+                        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                    )
+                ");
+                $notif_msg = "Your reservation has been rejected.";
+                $notif_title = "Reservation Rejected";
+                $notif_subtype = "reservation-rejected";
+                $stmt = $conn->prepare("INSERT INTO notifications (student_id, type, subtype, title, message) VALUES (?, 'reservation', ?, ?, ?)");
+                $stmt->bind_param('ssss', $student_id, $notif_subtype, $notif_title, $notif_msg);
+                $stmt->execute();
+                $stmt->close();
                 $conn->commit();
                 $success_msg = 'Reservation rejected.';
             } catch (Exception $e) {
@@ -192,12 +274,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             $conn->begin_transaction();
             try {
                 $conn->query("DELETE FROM reservations WHERE id=$res_id");
-                $pc_num = (int)($res_row['pc_number'] ?? 0);
-                $lab_e  = $conn->real_escape_string($res_row['lab']);
-                if ($pc_num > 0 && $res_row['status'] === 'approved') {
-                    $conn->query("UPDATE lab_pc_status SET status='available', updated_at=NOW()
-                                  WHERE lab='$lab_e' AND pc_number=$pc_num");
-                }
+                // No lab_pc_status update needed — availability is determined per date+time_slot via reservations
                 $conn->commit();
                 $success_msg = 'Reservation deleted.';
             } catch (Exception $e) {
@@ -215,9 +292,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
         if ($total_pcs < 1) $total_pcs = 1;
         if ($total_pcs > 200) $total_pcs = 200;
         if ($lab_name) {
-            $r = $conn->query("INSERT INTO configured_labs (lab_name, total_pcs, pc_status_set) VALUES ('$lab_name', $total_pcs, 0)");
-            $success_msg = $r ? "Lab \"$lab_name\" added. Remember to set PC statuses!" : '';
-            if (!$r) $error_msg = "Lab \"$lab_name\" already exists.";
+            // FIX 1: Use INSERT IGNORE to silently skip duplicates (prevents crash on page reload after PC modal save)
+            $r = $conn->query("INSERT IGNORE INTO configured_labs (lab_name, total_pcs, pc_status_set) VALUES ('$lab_name', $total_pcs, 0)");
+            if ($r && $conn->affected_rows > 0) {
+                $success_msg = "Lab \"$lab_name\" added. Remember to set PC statuses!";
+            } elseif (!$r) {
+                $error_msg = "Failed to add lab \"$lab_name\".";
+            }
+            // If affected_rows === 0, it was a duplicate — silently ignore (no error shown)
         } else {
             $error_msg = 'Lab name cannot be empty.';
         }
@@ -270,9 +352,11 @@ $configured_labs = [];
 $clr = $conn->query("SELECT * FROM configured_labs ORDER BY lab_name");
 if ($clr) while ($row = $clr->fetch_assoc()) {
     $ln = $conn->real_escape_string($row['lab_name']);
-    $row['available_pcs']  = (int)($conn->query("SELECT COUNT(*) AS c FROM lab_pc_status WHERE lab='$ln' AND status='available'")->fetch_assoc()['c'] ?? 0);
-    $row['in_use_pcs']     = (int)($conn->query("SELECT COUNT(*) AS c FROM lab_pc_status WHERE lab='$ln' AND status='in_use'")->fetch_assoc()['c'] ?? 0);
-    $row['unavailable_pcs']= (int)($conn->query("SELECT COUNT(*) AS c FROM lab_pc_status WHERE lab='$ln' AND status='unavailable'")->fetch_assoc()['c'] ?? 0);
+    $today = date('Y-m-d');
+    $row['available_pcs']   = (int)($conn->query("SELECT COUNT(*) AS c FROM lab_pc_status WHERE lab='$ln' AND status='available'")->fetch_assoc()['c'] ?? 0);
+    $row['unavailable_pcs'] = (int)($conn->query("SELECT COUNT(*) AS c FROM lab_pc_status WHERE lab='$ln' AND status='unavailable'")->fetch_assoc()['c'] ?? 0);
+    // in_use = PCs with an approved reservation today
+    $row['in_use_pcs']      = (int)($conn->query("SELECT COUNT(DISTINCT pc_number) AS c FROM reservations WHERE lab='$ln' AND status='approved' AND date='$today' AND pc_number IS NOT NULL")->fetch_assoc()['c'] ?? 0);
     $configured_labs[] = $row;
 }
 
@@ -397,8 +481,8 @@ $available_lab_options = array_diff($all_lab_options, $existing_lab_names);
         .add-lab-note{font-size:11px;color:var(--amber);background:var(--amber-light);border:1px solid #fde68a;border-radius:7px;padding:6px 10px;display:flex;align-items:center;gap:5px}
         .no-labs-notice{font-size:11.5px;color:var(--green);background:var(--green-light);border:1px solid #b2e8cc;border-radius:7px;padding:7px 12px;display:flex;align-items:center;gap:5px;font-weight:600}
 
-        /* ── LAB CARDS (stacked vertically in left column) ── */
-        .lab-list{display:flex;flex-direction:column;gap:10px;max-height:calc(100vh - 320px);overflow-y:auto;padding-right:2px}
+        /* ── LAB CARDS ── */
+        .lab-list{display:flex;flex-direction:column;gap:10px;padding-right:2px}
         .lab-list::-webkit-scrollbar{width:5px}
         .lab-list::-webkit-scrollbar-track{background:transparent}
         .lab-list::-webkit-scrollbar-thumb{background:var(--border);border-radius:10px}
@@ -406,19 +490,14 @@ $available_lab_options = array_diff($all_lab_options, $existing_lab_names);
         .lab-config-card:hover{transform:translateY(-1px);box-shadow:0 5px 16px rgba(15,38,83,0.1)}
         .lab-config-card.inactive{opacity:0.55}
         .lab-config-card.needs-setup{border-color:#fcd34d}
-
-        /* badge */
         .pc-setup-required-badge{position:absolute;top:8px;right:8px;background:linear-gradient(135deg,#f59e0b,#d97706);color:white;font-size:9.5px;font-weight:800;padding:2px 8px;border-radius:20px;text-transform:uppercase;letter-spacing:0.5px;box-shadow:0 2px 6px rgba(245,158,11,0.4);animation:pulse-badge 2s ease-in-out infinite}
         @keyframes pulse-badge{0%,100%{box-shadow:0 2px 6px rgba(245,158,11,0.4)}50%{box-shadow:0 2px 14px rgba(245,158,11,0.7)}}
         .pc-setup-done-badge{position:absolute;top:8px;right:8px;background:linear-gradient(135deg,#22c55e,#16a34a);color:white;font-size:9.5px;font-weight:800;padding:2px 8px;border-radius:20px;text-transform:uppercase;letter-spacing:0.5px}
-
         .lab-card-main{padding:11px 14px 8px;display:flex;align-items:center;gap:10px}
         .lab-card-icon{width:36px;height:36px;border-radius:9px;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:17px;background:linear-gradient(135deg,var(--navy),var(--navy-light))}
         .lab-card-info{flex:1;min-width:0}
         .lab-card-name{font-size:13.5px;font-weight:700;color:var(--navy);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding-right:90px}
         .lab-card-meta{font-size:11px;color:var(--muted);margin-top:1px}
-
-        /* ── PC STATUS ROW ── */
         .pc-status-row{display:flex;gap:6px;padding:0 14px 8px;flex-wrap:wrap}
         .pc-status-pill{display:inline-flex;align-items:center;gap:5px;padding:3px 9px;border-radius:20px;font-size:11px;font-weight:700;border:1px solid}
         .pc-status-pill.avail{background:#edfaf3;color:#1a7a4a;border-color:#b2e8cc}
@@ -427,11 +506,9 @@ $available_lab_options = array_diff($all_lab_options, $existing_lab_names);
         .pc-status-pill .pill-dot{width:7px;height:7px;border-radius:50%;background:currentColor;flex-shrink:0}
         .pc-bar-wrap{margin:0 14px 8px;height:5px;background:#eef1f8;border-radius:10px;overflow:hidden}
         .pc-bar-fill{height:100%;border-radius:10px;background:linear-gradient(90deg,#22c55e,#16a34a);transition:width 0.4s}
-
         .lab-setup-warning{margin:0 14px 8px;background:#fffbeb;border:1px solid #fde68a;border-radius:7px;padding:6px 10px;display:flex;align-items:center;gap:7px;font-size:11px;color:var(--amber);font-weight:600}
         .lab-setup-warning .btn-setup-now{margin-left:auto;height:22px;padding:0 9px;background:#f59e0b;color:white;border:none;border-radius:5px;font-size:10.5px;font-weight:700;font-family:'DM Sans',sans-serif;cursor:pointer;white-space:nowrap;transition:opacity 0.15s}
         .lab-setup-warning .btn-setup-now:hover{opacity:0.85}
-
         .lab-card-footer{border-top:1px solid var(--border);padding:7px 10px;display:flex;gap:5px;align-items:center;background:#fafbfd}
         .btn-lab-action{height:26px;padding:0 10px;border-radius:6px;font-size:11px;font-weight:700;font-family:'DM Sans',sans-serif;cursor:pointer;border:1px solid;transition:opacity 0.15s,transform 0.15s;white-space:nowrap}
         .btn-lab-action:hover{opacity:0.8;transform:translateY(-1px)}
@@ -448,7 +525,7 @@ $available_lab_options = array_diff($all_lab_options, $existing_lab_names);
         .empty-labs .el-icon{font-size:36px;margin-bottom:8px;opacity:0.4}
         .empty-labs h3{font-size:13px;font-weight:700;color:var(--navy);margin-bottom:3px}
 
-        /* ── RESERVATION TABLE (RIGHT PANEL) ── */
+        /* ── RESERVATION TABLE ── */
         .filter-bar{padding:12px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px;flex-wrap:wrap;background:#fafbfd}
         .filter-bar label{font-size:11.5px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.4px}
         .filter-bar input[type="text"],.filter-bar select{height:32px;padding:0 10px;border:1px solid var(--border);border-radius:7px;font-size:12.5px;font-family:'DM Sans',sans-serif;color:var(--text);background:white;outline:none;transition:border-color 0.18s,box-shadow 0.18s}
@@ -462,12 +539,12 @@ $available_lab_options = array_diff($all_lab_options, $existing_lab_names);
         .table-wrap{overflow-x:auto}
         table{width:100%;border-collapse:collapse;font-size:13px}
         thead tr{background:var(--tag-bg);border-bottom:2px solid var(--border)}
-        thead th{padding:10px 12px;text-align:left;font-size:10.5px;font-weight:700;color:var(--navy);text-transform:uppercase;letter-spacing:0.5px;white-space:nowrap}
+        thead th{padding:10px 8px;text-align:left;font-size:10.5px;font-weight:700;color:var(--navy);text-transform:uppercase;letter-spacing:0.5px;white-space:nowrap}
         thead th.center{text-align:center}
         tbody tr{border-bottom:1px solid #f0f3f9;transition:background 0.14s}
         tbody tr:last-child{border-bottom:none}
         tbody tr:hover{background:#f5f7fd}
-        tbody td{padding:10px 12px;vertical-align:middle}
+        tbody td{padding:8px 8px;vertical-align:middle}
         tbody td.center{text-align:center}
         .student-cell .s-name{font-weight:700;color:var(--navy);font-size:12.5px}
         .student-cell .s-id{font-size:10.5px;color:var(--muted);margin-top:1px}
@@ -484,8 +561,8 @@ $available_lab_options = array_diff($all_lab_options, $existing_lab_names);
         .status-pill.rejected{background:var(--red-light);color:var(--red)}
         .status-pill.cancelled{background:#f0f3f9;color:var(--muted)}
         .status-dot{width:6px;height:6px;border-radius:50%;background:currentColor}
-        .action-btns{display:flex;gap:5px;justify-content:center;align-items:center;flex-wrap:wrap}
-        .btn-approve,.btn-reject,.btn-delete,.btn-pc{padding:4px 10px;border-radius:6px;font-size:11px;font-weight:700;font-family:'DM Sans',sans-serif;cursor:pointer;border:none;transition:opacity 0.15s,transform 0.15s}
+        .action-btns{display:flex;gap:3px;justify-content:center;align-items:center;flex-wrap:wrap;min-width:130px}
+        .btn-approve,.btn-reject,.btn-delete,.btn-pc{padding:3px 7px;border-radius:6px;font-size:10.5px;font-weight:700;font-family:'DM Sans',sans-serif;cursor:pointer;border:none;transition:opacity 0.15s,transform 0.15s}
         .btn-approve{background:var(--green-light);color:var(--green);border:1px solid #b2e8cc}
         .btn-reject{background:var(--orange-light);color:var(--orange);border:1px solid #fcd87a}
         .btn-delete{background:var(--red-light);color:var(--red);border:1px solid #f5c6cb}
@@ -565,7 +642,7 @@ $available_lab_options = array_diff($all_lab_options, $existing_lab_names);
         .pc-stat-chip.in_use .cs-value{color:#d97706}
         .pc-stat-chip.in_use .cs-label{color:#fbbf24}
         .pc-grid-label{font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:10px}
-        .pc-grid{display:grid;grid-template-columns:repeat(10,1fr);gap:8px;margin-bottom:20px}
+        .pc-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:8px;margin-bottom:20px}
         .pc-cell{aspect-ratio:1;border-radius:9px;border:2px solid transparent;display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:pointer;transition:transform 0.14s,box-shadow 0.14s;position:relative;min-height:48px;user-select:none}
         .pc-cell:hover{transform:scale(1.08);box-shadow:0 4px 12px rgba(0,0,0,0.15)}
         .pc-cell:active{transform:scale(0.96)}
@@ -595,18 +672,9 @@ $available_lab_options = array_diff($all_lab_options, $existing_lab_names);
         .pc-loading p{font-size:13px;color:var(--muted);font-weight:500}
 
         /* ── RESPONSIVE ── */
-        @media(max-width:1100px){
-            .split-layout{grid-template-columns:1fr}
-            .lab-list{max-height:none}
-        }
-        @media(max-width:900px){
-            .stat-strip{grid-template-columns:repeat(2,1fr)}
-            .page-wrapper{padding:20px 16px 40px}
-        }
-        @media(max-width:560px){
-            .stat-strip{grid-template-columns:1fr}
-            .pc-grid{grid-template-columns:repeat(5,1fr)}
-        }
+        @media(max-width:1100px){.split-layout{grid-template-columns:1fr}.lab-list{max-height:none}}
+        @media(max-width:900px){.stat-strip{grid-template-columns:repeat(2,1fr)}.page-wrapper{padding:20px 16px 40px}}
+        @media(max-width:560px){.stat-strip{grid-template-columns:1fr}.pc-grid{grid-template-columns:repeat(5,1fr)}}
     </style>
 </head>
 <body>
@@ -746,7 +814,6 @@ $available_lab_options = array_diff($all_lab_options, $existing_lab_names);
 <div class="alert error">❌ <?= htmlspecialchars($error_msg) ?></div>
 <?php endif; ?>
 
-<!-- SPLIT LAYOUT: Lab Config LEFT | Reservation Requests RIGHT -->
 <div class="split-layout">
 
     <!-- ── LEFT: LAB CONFIGURATION ── -->
@@ -757,7 +824,6 @@ $available_lab_options = array_diff($all_lab_options, $existing_lab_names);
         </div>
         <div class="lab-config-body">
 
-            <!-- Add Lab Form -->
             <form method="POST" class="add-lab-form" id="addLabForm" onsubmit="return validateAddLab()">
                 <input type="hidden" name="action" value="add_lab">
                 <div class="field">
@@ -791,7 +857,6 @@ $available_lab_options = array_diff($all_lab_options, $existing_lab_names);
                 <?php endif; ?>
             </form>
 
-            <!-- Lab Cards -->
             <?php if (empty($configured_labs)): ?>
             <div class="empty-labs"><div class="el-icon">🏛️</div><h3>No labs configured yet</h3><p>Add a lab above.</p></div>
             <?php else: ?>
@@ -802,13 +867,11 @@ $available_lab_options = array_diff($all_lab_options, $existing_lab_names);
                     $needs_setup = !$cl['pc_status_set'];
                 ?>
                 <div class="lab-config-card <?= $inactive ? 'inactive' : '' ?> <?= $needs_setup ? 'needs-setup' : '' ?>">
-
                     <?php if ($needs_setup): ?>
                     <div class="pc-setup-required-badge">⚙️ Setup Required</div>
                     <?php else: ?>
                     <div class="pc-setup-done-badge">✓ Ready</div>
                     <?php endif; ?>
-
                     <div class="lab-card-main">
                         <div class="lab-card-icon">🏛️</div>
                         <div class="lab-card-info">
@@ -816,23 +879,19 @@ $available_lab_options = array_diff($all_lab_options, $existing_lab_names);
                             <div class="lab-card-meta"><?= (int)$cl['total_pcs'] ?> PCs configured</div>
                         </div>
                     </div>
-
                     <?php if ($needs_setup): ?>
                     <div class="lab-setup-warning">
                         🔒 PC conditions not set — students cannot reserve
                         <button type="button" class="btn-setup-now" onclick="openPcModal('<?= htmlspecialchars(addslashes($cl['lab_name'])) ?>', <?= (int)$cl['total_pcs'] ?>)">Set Now →</button>
                     </div>
                     <?php else: ?>
-                    <!-- PC Status Pills -->
                     <div class="pc-status-row">
                         <span class="pc-status-pill avail"><span class="pill-dot"></span><?= $cl['available_pcs'] ?> Available</span>
                         <span class="pc-status-pill inuse"><span class="pill-dot"></span><?= $cl['in_use_pcs'] ?> Reserved</span>
                         <span class="pc-status-pill unavail"><span class="pill-dot"></span><?= $cl['unavailable_pcs'] ?> Unavailable</span>
                     </div>
-                    <!-- Availability bar -->
                     <div class="pc-bar-wrap"><div class="pc-bar-fill" style="width:<?= $avail_pct ?>%"></div></div>
                     <?php endif; ?>
-
                     <div class="lab-card-footer">
                         <button class="btn-lab-action btn-lab-pcs <?= $needs_setup ? 'urgent' : '' ?>" onclick="openPcModal('<?= htmlspecialchars(addslashes($cl['lab_name'])) ?>', <?= (int)$cl['total_pcs'] ?>)">
                             🖥️ <?= $needs_setup ? 'Set PC Status ⚠️' : 'Manage PCs' ?>
@@ -1162,7 +1221,8 @@ function savePcStatuses() {
                     ? `✅ Saved! ${avail} PC${avail>1?'s':''} available — students can reserve.`
                     : `⚠️ Saved, but no PCs are available.`;
                 toast.classList.add('show');
-                setTimeout(()=>{ toast.classList.remove('show'); location.reload(); }, 3000);
+                // FIX 2: Use href redirect instead of reload() to prevent POST data resubmission
+                setTimeout(() => { window.location.href = 'admin_reservation.php'; }, 2000);
             }
         })
         .catch(()=>{ btn.disabled=false; btn.innerHTML='💾 Save &amp; Publish'; });

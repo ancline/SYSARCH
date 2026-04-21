@@ -52,6 +52,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['announcement'])) {
         $stmt->bind_param('s', $msg);
         $stmt->execute();
         $stmt->close();
+
+        // Create notification for all students (student_id IS NULL means global)
+        $conn->query("
+            CREATE TABLE IF NOT EXISTS notifications (
+                id         INT AUTO_INCREMENT PRIMARY KEY,
+                student_id VARCHAR(50),
+                type       VARCHAR(30) DEFAULT 'announcement',
+                subtype    VARCHAR(30) DEFAULT NULL,
+                title      VARCHAR(255),
+                message    TEXT,
+                is_read    TINYINT(1) DEFAULT 0,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        ");
+        $stmt = $conn->prepare("INSERT INTO notifications (student_id, type, title, message) VALUES (NULL, 'announcement', 'New Announcement', ?)");
+        $stmt->bind_param('s', $msg);
+        $stmt->execute();
+        $stmt->close();
+
         $conn->close();
         header('Location: admin_home.php?posted=1');
         exit();
