@@ -301,7 +301,7 @@ $existing_lab_names = array_column($configured_labs, 'lab_name');
 
 $conn->close();
 
-$all_lab_options = ['Lab 524','Lab 526','Lab 527','Lab 528','Lab 530','Mac Lab'];
+$all_lab_options = ['Lab 524','Lab 526','Lab 528','Lab 530', 'Lab 542', 'Lab 544'];
 $available_lab_options = array_diff($all_lab_options, $existing_lab_names);
 ?>
 <!DOCTYPE html>
