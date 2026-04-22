@@ -113,8 +113,8 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === 'get_configured_labs') {
     if ($result) {
         while ($row = $result->fetch_assoc()) {
             $lab_esc = $conn->real_escape_string($row['lab_name']);
-            // Count admin-marked available PCs
-            $avail = (int)$conn->query("SELECT COUNT(*) AS c FROM lab_pc_status WHERE lab='$lab_esc' AND status='available'")->fetch_assoc()['c'];
+            // FIX: Count PCs not admin-marked broken, then subtract slot-booked ones
+            $avail = (int)$conn->query("SELECT COUNT(*) AS c FROM lab_pc_status WHERE lab='$lab_esc' AND status != 'unavailable'")->fetch_assoc()['c'];
             // Subtract PCs already booked for this date+time_slot
             if ($req_date && $req_slot) {
                 $booked = (int)$conn->query("
@@ -139,8 +139,10 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === 'get_available_pcs' && isset($_GET
     $lab_row = $conn->query("SELECT id FROM configured_labs WHERE lab_name='$lab' AND is_active=1 AND pc_status_set=1")->fetch_assoc();
     if (!$lab_row) { echo json_encode(['success' => false, 'error' => 'Lab not available.']); $conn->close(); exit(); }
 
-    // Get all PCs set to 'available' in lab_pc_status (admin-configured as not broken)
-    $result = $conn->query("SELECT pc_number FROM lab_pc_status WHERE lab='$lab' AND status='available' ORDER BY pc_number");
+    // FIX: Get all PCs that are NOT admin-marked as broken/unavailable.
+    // 'in_use' is a stale flag from the old system — we ignore it here.
+    // Per-slot conflicts are handled by the reservations table query below.
+    $result = $conn->query("SELECT pc_number FROM lab_pc_status WHERE lab='$lab' AND status != 'unavailable' ORDER BY pc_number");
     $available = [];
     if ($result) while ($row = $result->fetch_assoc()) $available[] = (int)$row['pc_number'];
 

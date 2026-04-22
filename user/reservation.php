@@ -21,7 +21,6 @@ $student_name = $_SESSION['student_name'] ?? '';
 $success_msg  = '';
 $error_msg    = '';
 
-// ── Auto-create reservations table if missing ──
 $conn->query("
     CREATE TABLE IF NOT EXISTS reservations (
         id           INT AUTO_INCREMENT PRIMARY KEY,
@@ -37,13 +36,11 @@ $conn->query("
     )
 ");
 
-// ── Add pc_number column if it doesn't exist (migration) ──
 $col_check = $conn->query("SHOW COLUMNS FROM reservations LIKE 'pc_number'");
 if ($col_check && $col_check->num_rows === 0) {
     $conn->query("ALTER TABLE reservations ADD COLUMN pc_number VARCHAR(20) DEFAULT NULL AFTER lab");
 }
 
-// ── Handle form submission ──
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
 
     if ($_POST['action'] === 'reserve') {
@@ -52,18 +49,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
         $time_slot = trim($_POST['time_slot'] ?? '');
         $pc_number = trim($_POST['pc_number'] ?? '');
 
-        // Resolve purpose: use custom if "other" was selected
         $purpose_sel    = trim($_POST['purpose'] ?? '');
         $purpose_custom = trim($_POST['purpose_custom'] ?? '');
         $purpose = ($purpose_sel === 'other') ? $purpose_custom : $purpose_sel;
 
         if ($lab && $purpose && $date && $time_slot && $pc_number) {
-            // Check sessions remaining
             $srow = $conn->query("SELECT sessions FROM student WHERE IdNumber = '" . $conn->real_escape_string($student_id) . "'")->fetch_assoc();
             if (!$srow || (int)$srow['sessions'] <= 0) {
                 $error_msg = 'You have no sessions remaining. Cannot make a reservation.';
             } else {
-                // Verify the lab is admin-configured, active, and has available PCs
                 $lab_check = $conn->prepare("
                     SELECT id FROM configured_labs
                     WHERE lab_name = ? AND is_active = 1 AND pc_status_set = 1
@@ -78,43 +72,47 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 } else {
                     $lab_check->close();
 
-                    // Verify chosen PC is actually available
+                    // FIX: Check PC is not admin-marked as permanently unavailable (broken)
+                    // We do NOT block on 'in_use' here — that's a stale flag; per-slot conflict is checked below.
                     $pc_check = $conn->prepare("
                         SELECT COUNT(*) FROM lab_pc_status
-                        WHERE lab = ? AND pc_number = ? AND status = 'available'
+                        WHERE lab = ? AND pc_number = ? AND status = 'unavailable'
                     ");
                     $pc_check->bind_param('ss', $lab, $pc_number);
                     $pc_check->execute();
-                    $pc_check->bind_result($pc_avail);
+                    $pc_check->bind_result($pc_broken);
                     $pc_check->fetch();
                     $pc_check->close();
 
-                    if ((int)$pc_avail < 1) {
-                        $error_msg = 'That PC is no longer available. Please choose another.';
+                    if ((int)$pc_broken > 0) {
+                        $error_msg = 'That PC is marked unavailable by admin. Please choose another.';
                     } else {
-                        // ── Block duplicate for pending OR approved ──
-                        $chk = $conn->prepare("
+                        // FIX: Check if PC is already booked for this date+time_slot (per-slot conflict)
+                        $pc_slot_chk = $conn->prepare("
                             SELECT id FROM reservations
-                            WHERE student_id = ? AND date = ? AND time_slot = ?
+                            WHERE lab = ? AND pc_number = ? AND date = ? AND time_slot = ?
                               AND status IN ('pending','approved')
                         ");
-                        $chk->bind_param('sss', $student_id, $date, $time_slot);
-                        $chk->execute();
-                        $chk->store_result();
-                        if ($chk->num_rows > 0) {
-                            $error_msg = 'You already have a pending or approved reservation for that date and time slot.';
+                        $pc_slot_chk->bind_param('ssss', $lab, $pc_number, $date, $time_slot);
+                        $pc_slot_chk->execute();
+                        $pc_slot_chk->store_result();
+                        $pc_slot_taken = $pc_slot_chk->num_rows > 0;
+                        $pc_slot_chk->close();
+
+                        if ($pc_slot_taken) {
+                            $error_msg = 'That PC is already reserved for that date and time slot. Please choose another PC or time slot.';
                         } else {
-                            // Check if this specific PC is already reserved by someone else for that slot
-                            $pc_slot_chk = $conn->prepare("
+                            // Block student from double-booking same date+time_slot
+                            $chk = $conn->prepare("
                                 SELECT id FROM reservations
-                                WHERE lab = ? AND pc_number = ? AND date = ? AND time_slot = ?
+                                WHERE student_id = ? AND date = ? AND time_slot = ?
                                   AND status IN ('pending','approved')
                             ");
-                            $pc_slot_chk->bind_param('ssss', $lab, $pc_number, $date, $time_slot);
-                            $pc_slot_chk->execute();
-                            $pc_slot_chk->store_result();
-                            if ($pc_slot_chk->num_rows > 0) {
-                                $error_msg = 'That PC is already reserved for that date and time slot. Please choose another PC.';
+                            $chk->bind_param('sss', $student_id, $date, $time_slot);
+                            $chk->execute();
+                            $chk->store_result();
+                            if ($chk->num_rows > 0) {
+                                $error_msg = 'You already have a pending or approved reservation for that date and time slot.';
                             } else {
                                 $ins = $conn->prepare("INSERT INTO reservations (student_id, student_name, lab, pc_number, purpose, date, time_slot) VALUES (?, ?, ?, ?, ?, ?, ?)");
                                 $ins->bind_param('sssssss', $student_id, $student_name, $lab, $pc_number, $purpose, $date, $time_slot);
@@ -125,9 +123,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                                 }
                                 $ins->close();
                             }
-                            $pc_slot_chk->close();
+                            $chk->close();
                         }
-                        $chk->close();
                     }
                 }
             }
@@ -152,7 +149,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
     }
 }
 
-// ── Fetch my reservations ──
 $reservations = [];
 $rres = $conn->prepare("SELECT * FROM reservations WHERE student_id = ? ORDER BY created_at DESC LIMIT 30");
 $rres->bind_param('s', $student_id);
@@ -163,12 +159,10 @@ while ($row = $rr->fetch_assoc()) {
 }
 $rres->close();
 
-// ── Stats ──
 $total_res    = count($reservations);
 $pending_res  = count(array_filter($reservations, fn($r) => $r['status'] === 'pending'));
 $approved_res = count(array_filter($reservations, fn($r) => $r['status'] === 'approved'));
 
-// ── Sessions remaining ──
 $sessions_remaining = 0;
 $sr = $conn->prepare("SELECT sessions FROM student WHERE IdNumber = ?");
 $sr->bind_param('s', $student_id);
@@ -177,7 +171,6 @@ $srrow = $sr->get_result()->fetch_assoc();
 if ($srrow) $sessions_remaining = (int)$srrow['sessions'];
 $sr->close();
 
-// ── Unread notifications ──
 $unread_count = 0;
 $conn->query("
     CREATE TABLE IF NOT EXISTS notifications (
@@ -198,13 +191,11 @@ $nstmt->bind_result($unread_count);
 $nstmt->fetch();
 $nstmt->close();
 
-// Min date = tomorrow | Max date = 30 days from now
 $min_date = date('Y-m-d', strtotime('+1 day'));
 $max_date = date('Y-m-d', strtotime('+30 days'));
 
 $conn->close();
 
-// ── Purpose options ──
 $purpose_options = [
     'C Programming'                => 'C Programming',
     'Java Programming'             => 'Java Programming',
@@ -681,6 +672,15 @@ $purpose_options = [
         .pc-legend-dot.taken     { background: #ccc; }
         .pc-legend-dot.selected  { background: var(--accent); }
 
+        /* Slot conflict note inside PC modal */
+        .pc-slot-note {
+            font-size: 11.5px; color: var(--muted);
+            background: var(--tag-bg); border: 1px solid var(--border);
+            border-radius: 8px; padding: 8px 12px; margin-bottom: 14px;
+            display: flex; align-items: center; gap: 7px;
+        }
+        .pc-slot-note.has-slot { color: #0a7a52; background: var(--green-bg); border-color: #9ee3ca; }
+
         .pc-grid {
             display: grid;
             grid-template-columns: repeat(auto-fill, minmax(72px, 1fr));
@@ -988,7 +988,6 @@ $purpose_options = [
     </div>
     <div class="nav-links">
 
-        <!-- NOTIFICATION BUTTON + DROPDOWN -->
         <div class="notif-wrapper" id="notifWrapper">
             <button class="notif-btn" id="notifBtn" onclick="toggleNotifDropdown()">
                 <span class="notif-bell">🔔</span>
@@ -1057,15 +1056,13 @@ $purpose_options = [
         </div>
         <div class="pc-modal-body">
             <div class="pc-legend">
-                <div class="pc-legend-item">
-                    <div class="pc-legend-dot available"></div> Available
-                </div>
-                <div class="pc-legend-item">
-                    <div class="pc-legend-dot taken"></div> Unavailable
-                </div>
-                <div class="pc-legend-item">
-                    <div class="pc-legend-dot selected"></div> Your Pick
-                </div>
+                <div class="pc-legend-item"><div class="pc-legend-dot available"></div> Available for this slot</div>
+                <div class="pc-legend-item"><div class="pc-legend-dot taken"></div> Taken / Unavailable</div>
+                <div class="pc-legend-item"><div class="pc-legend-dot selected"></div> Your Pick</div>
+            </div>
+            <!-- FIX: slot context note shown inside modal -->
+            <div class="pc-slot-note" id="pcSlotNote">
+                📅 Select a date and time slot first for accurate availability.
             </div>
             <div id="pcGrid" class="pc-grid">
                 <div class="pc-loading"><span class="spin"></span> Loading PCs…</div>
@@ -1083,7 +1080,6 @@ $purpose_options = [
 <!-- PAGE -->
 <div class="page-wrap">
 
-    <!-- HEADER -->
     <div class="page-header">
         <div class="page-header-icon">📅</div>
         <div class="page-header-text">
@@ -1092,7 +1088,6 @@ $purpose_options = [
         </div>
     </div>
 
-    <!-- STATS -->
     <div class="stats-row">
         <div class="stat-card">
             <div class="stat-icon blue">📋</div>
@@ -1117,7 +1112,6 @@ $purpose_options = [
         </div>
     </div>
 
-    <!-- MAIN GRID -->
     <div class="main-grid">
 
         <!-- LEFT: RESERVATION FORM -->
@@ -1144,7 +1138,6 @@ $purpose_options = [
             <form method="POST" class="form-body" onsubmit="return validateReservationForm()">
                 <input type="hidden" name="action" value="reserve">
 
-                <!-- Sessions remaining -->
                 <div class="sessions-info <?= $sessions_remaining <= 2 ? 'low' : '' ?>">
                     <span style="font-size:22px;"><?= $sessions_remaining <= 2 ? '⚠️' : '💻' ?></span>
                     <div>
@@ -1158,17 +1151,53 @@ $purpose_options = [
                     </div>
                 </div>
 
+                <!-- Date — MOVED UP so slot context is ready before lab/PC selection -->
+                <div class="form-group">
+                    <label><span class="licon">📅</span> Date</label>
+                    <input type="date" name="date" id="dateInput"
+                        min="<?= $min_date ?>"
+                        max="<?= $max_date ?>"
+                        required
+                        <?= $sessions_remaining <= 0 ? 'disabled' : '' ?>
+                        onchange="onDateOrSlotChange()">
+                </div>
+
+                <!-- Time Slot — MOVED UP -->
+                <div class="form-group">
+                    <label><span class="licon">⏰</span> Time Slot</label>
+                    <div class="slot-grid">
+                        <?php
+                        $slots = [
+                            '7:30 AM – 9:00 AM',
+                            '9:00 AM – 10:30 AM',
+                            '10:30 AM – 12:00 PM',
+                            '1:00 PM – 2:30 PM',
+                            '2:30 PM – 4:00 PM',
+                            '4:00 PM – 5:30 PM',
+                            '5:30 PM – 7:00 PM'
+                        ];
+                        foreach ($slots as $slot):
+                            $sid = 'slot_' . preg_replace('/[^a-z0-9]/', '_', strtolower($slot));
+                        ?>
+                        <input type="radio" name="time_slot" id="<?= $sid ?>" value="<?= htmlspecialchars($slot) ?>"
+                            class="slot-option" required <?= $sessions_remaining <= 0 ? 'disabled' : '' ?>
+                            onchange="onDateOrSlotChange()">
+                        <label for="<?= $sid ?>" class="slot-label">⏱ <?= htmlspecialchars($slot) ?></label>
+                        <?php endforeach; ?>
+                    </div>
+                </div>
+
                 <!-- Laboratory -->
                 <div class="form-group">
                     <label><span class="licon">🏛️</span> Laboratory</label>
                     <select name="lab" id="labSelect" required <?= $sessions_remaining <= 0 ? 'disabled' : '' ?>
                         onchange="handleLabChange(this.value)">
-                        <option value="" disabled selected>Loading available labs…</option>
+                        <option value="" disabled selected>Pick a date & time slot first…</option>
                     </select>
                     <div class="lab-load-msg" id="labLoadMsg"></div>
                 </div>
 
-                <!-- PC Picker Button (shown after lab is selected) -->
+                <!-- PC Picker -->
                 <div class="form-group">
                     <div class="pc-picker-wrap" id="pcPickerWrap">
                         <label><span class="licon">🖥️</span> PC Selection</label>
@@ -1204,40 +1233,6 @@ $purpose_options = [
                             <span style="font-size:11px;color:var(--muted);">Briefly describe your purpose</span>
                             <span class="char-count"><span id="customCount">0</span> / 255</span>
                         </div>
-                    </div>
-                </div>
-
-                <!-- Date -->
-                <div class="form-group">
-                    <label><span class="licon">📅</span> Date</label>
-                    <input type="date" name="date"
-                        min="<?= $min_date ?>"
-                        max="<?= $max_date ?>"
-                        required
-                        <?= $sessions_remaining <= 0 ? 'disabled' : '' ?>>
-                </div>
-
-                <!-- Time Slot -->
-                <div class="form-group">
-                    <label><span class="licon">⏰</span> Time Slot</label>
-                    <div class="slot-grid">
-                        <?php
-                        $slots = [
-                            '7:30 AM – 9:00 AM',
-                            '9:00 AM – 10:30 AM',
-                            '10:30 AM – 12:00 PM',
-                            '1:00 PM – 2:30 PM',
-                            '2:30 PM – 4:00 PM',
-                            '4:00 PM – 5:30 PM',
-                            '5:30 PM – 7:00 PM'
-                        ];
-                        foreach ($slots as $slot):
-                            $sid = 'slot_' . preg_replace('/[^a-z0-9]/', '_', strtolower($slot));
-                        ?>
-                        <input type="radio" name="time_slot" id="<?= $sid ?>" value="<?= htmlspecialchars($slot) ?>"
-                            class="slot-option" required <?= $sessions_remaining <= 0 ? 'disabled' : '' ?>>
-                        <label for="<?= $sid ?>" class="slot-label">⏱ <?= htmlspecialchars($slot) ?></label>
-                        <?php endforeach; ?>
                     </div>
                 </div>
 
@@ -1326,57 +1321,169 @@ $purpose_options = [
             </div>
         </div>
 
-    </div><!-- /main-grid -->
-</div><!-- /page-wrap -->
+    </div>
+</div>
 
 <script>
-// ── Temp PC selection inside modal ───────────────────────────────
 let _pendingPcNumber = '';
 
-// ── Lab change: show picker button, pre-load grid ─────────────────
-async function handleLabChange(labName) {
-    const wrap  = document.getElementById('pcPickerWrap');
-    const input = document.getElementById('pcNumberInput');
-    const hint  = document.getElementById('pcRequiredHint');
-    const btn   = document.getElementById('btnPickPc');
-
-    input.value      = '';
-    _pendingPcNumber = '';
-    hint.classList.remove('visible');
-    btn.className    = 'btn-pick-pc';
-    btn.textContent  = '🖥️ Click to choose a PC';
-
-    if (!labName) {
-        wrap.classList.remove('visible');
-        return;
-    }
-
-    wrap.classList.add('visible');
-    await loadPcGrid(labName);
+// ── Helpers to read currently selected date & time slot ──────────
+function getSelectedDate() {
+    return document.getElementById('dateInput')?.value || '';
 }
 
+function getSelectedSlot() {
+    const checked = document.querySelector('.slot-option:checked');
+    return checked ? checked.value : '';
+}
+
+// ── FIX: When date OR slot changes, reload labs and reset PC ──────
+function onDateOrSlotChange() {
+    const date = getSelectedDate();
+    const slot = getSelectedSlot();
+
+    // Reset PC selection since slot changed
+    resetPcSelection();
+
+    if (date && slot) {
+        loadConfiguredLabs(date, slot);
+    } else {
+        const sel = document.getElementById('labSelect');
+        sel.innerHTML = '<option value="" disabled selected>Pick a date & time slot first…</option>';
+        document.getElementById('pcPickerWrap').classList.remove('visible');
+    }
+}
+
+function resetPcSelection() {
+    document.getElementById('pcNumberInput').value = '';
+    _pendingPcNumber = '';
+    const btn  = document.getElementById('btnPickPc');
+    const hint = document.getElementById('pcRequiredHint');
+    if (btn)  { btn.className = 'btn-pick-pc'; btn.textContent = '🖥️ Click to choose a PC'; }
+    if (hint) hint.classList.remove('visible');
+    document.getElementById('pcPickerWrap').classList.remove('visible');
+}
+
+// ── Lab change: show picker, clear old PC ────────────────────────
+function handleLabChange(labName) {
+    resetPcSelection();
+    if (!labName) return;
+    document.getElementById('pcPickerWrap').classList.add('visible');
+}
+
+// ── FIX: Load labs filtered by date+slot ────────────────────────
+async function loadConfiguredLabs(date, slot) {
+    const sel       = document.getElementById('labSelect');
+    const msg       = document.getElementById('labLoadMsg');
+    const submitBtn = document.getElementById('submitBtn');
+    if (!sel) return;
+
+    sel.innerHTML = '<option value="" disabled selected>Loading available labs…</option>';
+
+    try {
+        const params = new URLSearchParams({ ajax: 'get_configured_labs' });
+        if (date) params.set('date', date);
+        if (slot) params.set('time_slot', slot);
+
+        const res  = await fetch('/SYSARCH/admin/admin_reservation.php?' + params.toString());
+        const data = await res.json();
+
+        sel.innerHTML = '<option value="" disabled selected>Select a laboratory…</option>';
+
+        if (!data.success || !data.labs || data.labs.length === 0) {
+            sel.innerHTML = '<option value="" disabled selected>No labs available for this slot</option>';
+            sel.disabled  = true;
+            msg.textContent = 'No laboratories have available PCs for this date and time slot.';
+            msg.className   = 'lab-load-msg warning';
+            msg.style.display = 'block';
+            if (submitBtn && !submitBtn.disabled) submitBtn.disabled = true;
+            return;
+        }
+
+        sel.disabled = false;
+        if (submitBtn) submitBtn.disabled = false;
+        msg.style.display = 'none';
+
+        data.labs.forEach(lab => {
+            const opt = document.createElement('option');
+            opt.value = lab.name;
+            opt.textContent = lab.name + '  (' + lab.available + ' PC' + (lab.available !== 1 ? 's' : '') + ' available)';
+            sel.appendChild(opt);
+        });
+
+    } catch (e) {
+        sel.innerHTML = '<option value="" disabled selected>Failed to load labs — please refresh</option>';
+        sel.disabled  = true;
+        msg.textContent = 'Could not load lab list. Please refresh the page.';
+        msg.className   = 'lab-load-msg error';
+        msg.style.display = 'block';
+    }
+}
+
+// ── FIX: Load PCs filtered by date+slot (per-slot availability) ──
 async function loadPcGrid(labName) {
     const pcGrid = document.getElementById('pcGrid');
     pcGrid.innerHTML = '<div class="pc-loading"><span class="spin"></span> Loading PCs…</div>';
 
+    const date = getSelectedDate();
+    const slot = getSelectedSlot();
+
+    // Update slot context note in modal
+    const noteEl = document.getElementById('pcSlotNote');
+    if (date && slot) {
+        noteEl.textContent = '📅 Showing availability for ' + date + ' · ' + slot;
+        noteEl.className = 'pc-slot-note has-slot';
+    } else {
+        noteEl.textContent = '⚠️ No date/slot selected — showing general availability only.';
+        noteEl.className = 'pc-slot-note';
+    }
+
     try {
-        const res  = await fetch('/SYSARCH/admin/admin_reservation.php?ajax=get_pc_status&lab=' + encodeURIComponent(labName));
+        // FIX: Use get_available_pcs with date+slot to get conflict-aware availability
+        const params = new URLSearchParams({ ajax: 'get_available_pcs', lab: labName });
+        if (date) params.set('date', date);
+        if (slot) params.set('time_slot', slot);
+
+        const res  = await fetch('/SYSARCH/admin/admin_reservation.php?' + params.toString());
         const data = await res.json();
 
-        if (!data.success || !data.pcs || data.pcs.length === 0) {
+        if (!data.success) {
+            pcGrid.innerHTML = '<div class="pc-loading" style="color:var(--orange);">⚠️ ' + (data.error || 'Lab not available.') + '</div>';
+            return;
+        }
+
+        // get_available_pcs returns ONLY PCs that are:
+        //   1) admin-marked 'available' (not broken/unavailable)
+        //   2) not already booked for this exact date+time_slot
+        // So we use this list as the single source of truth for availability.
+        const freeForSlot = new Set((data.available_pcs || []).map(Number));
+
+        // Also fetch pc_status to know the total PC count and which are admin-marked unavailable
+        const statusRes  = await fetch('/SYSARCH/admin/admin_reservation.php?ajax=get_pc_status&lab=' + encodeURIComponent(labName));
+        const statusData = await statusRes.json();
+
+        if (!statusData.success || !statusData.pcs || statusData.pcs.length === 0) {
             pcGrid.innerHTML = '<div class="pc-loading" style="color:var(--orange);">⚠️ No PC data found for this lab.</div>';
             return;
         }
 
         pcGrid.innerHTML = '';
-        data.pcs.forEach(pc => {
-            const isAvailable = pc.status === 'available';
+        statusData.pcs.forEach(pc => {
+            const adminBroken  = pc.status === 'unavailable'; // admin explicitly marked broken
+            // FIX: availability is purely whether get_available_pcs returned this PC for this slot.
+            // A PC that was previously 'in_use' in lab_pc_status but is free for this slot IS available.
+            const isAvailable  = freeForSlot.has(pc.pc);
+
             const btn = document.createElement('button');
-            btn.type      = 'button';
-            btn.className = 'pc-btn ' + (isAvailable ? 'available' : 'taken');
+            btn.type       = 'button';
+            btn.className  = 'pc-btn ' + (isAvailable ? 'available' : 'taken');
             btn.dataset.pc = pc.pc;
-            btn.disabled  = !isAvailable;
-            btn.innerHTML = `<span class="pc-icon">${isAvailable ? '🖥️' : '🚫'}</span><span class="pc-num">PC ${pc.pc}</span>`;
+            btn.disabled   = !isAvailable;
+
+            let icon  = isAvailable ? '🖥️' : (adminBroken ? '🚫' : '📅');
+            let title = isAvailable ? 'Available' : (adminBroken ? 'Unavailable (admin)' : 'Booked for this slot');
+            btn.title   = 'PC ' + pc.pc + ' — ' + title;
+            btn.innerHTML = `<span class="pc-icon">${icon}</span><span class="pc-num">PC ${pc.pc}</span>`;
 
             if (isAvailable) {
                 btn.addEventListener('click', () => selectPcInModal(pc.pc, btn));
@@ -1384,6 +1491,7 @@ async function loadPcGrid(labName) {
             pcGrid.appendChild(btn);
         });
 
+        // Restore previously selected PC if still available
         const committed = document.getElementById('pcNumberInput').value;
         if (committed) {
             const existing = pcGrid.querySelector(`[data-pc="${committed}"]`);
@@ -1391,6 +1499,9 @@ async function loadPcGrid(labName) {
                 existing.classList.add('selected');
                 _pendingPcNumber = committed;
                 updateModalFooter(committed);
+            } else {
+                // Previously selected PC is no longer available for this slot
+                resetPcSelection();
             }
         }
 
@@ -1434,14 +1545,11 @@ function closePcModal() {
 
 function confirmPcSelection() {
     if (!_pendingPcNumber) return;
-
     document.getElementById('pcNumberInput').value = _pendingPcNumber;
     document.getElementById('pcRequiredHint').classList.remove('visible');
-
     const btn = document.getElementById('btnPickPc');
     btn.className   = 'btn-pick-pc has-selection';
     btn.textContent = '✓ PC ' + _pendingPcNumber + ' selected — click to change';
-
     document.getElementById('pcModal').classList.remove('open');
     _pendingPcNumber = '';
 }
@@ -1454,13 +1562,9 @@ function handlePurposeChange(sel) {
     const wrap  = document.getElementById('purposeCustomWrap');
     const input = document.getElementById('purposeCustom');
     if (sel.value === 'other') {
-        wrap.classList.add('visible');
-        input.required = true;
-        input.focus();
+        wrap.classList.add('visible'); input.required = true; input.focus();
     } else {
-        wrap.classList.remove('visible');
-        input.required = false;
-        input.value = '';
+        wrap.classList.remove('visible'); input.required = false; input.value = '';
         document.getElementById('customCount').textContent = '0';
     }
 }
@@ -1500,50 +1604,6 @@ function validateReservationForm() {
     return true;
 }
 
-async function loadConfiguredLabs() {
-    const sel       = document.getElementById('labSelect');
-    const msg       = document.getElementById('labLoadMsg');
-    const submitBtn = document.getElementById('submitBtn');
-    if (!sel) return;
-
-    try {
-        const res  = await fetch('/SYSARCH/admin/admin_reservation.php?ajax=get_configured_labs');
-        const data = await res.json();
-
-        sel.innerHTML = '<option value="" disabled selected>Select a laboratory…</option>';
-
-        if (!data.success || !data.labs || data.labs.length === 0) {
-            sel.innerHTML = '<option value="" disabled selected>No labs available for reservation</option>';
-            sel.disabled  = true;
-            msg.textContent = 'No laboratories are currently open for reservation. Please check back later or contact the admin.';
-            msg.className   = 'lab-load-msg warning';
-            msg.style.display = 'block';
-            if (submitBtn && !submitBtn.disabled) submitBtn.disabled = true;
-            return;
-        }
-
-        data.labs.forEach(lab => {
-            const opt = document.createElement('option');
-            opt.value = lab.name;
-            opt.textContent = lab.name + '  (' + lab.available + ' PC' + (lab.available !== 1 ? 's' : '') + ' available)';
-            sel.appendChild(opt);
-        });
-
-        msg.style.display = 'none';
-
-    } catch (e) {
-        sel.innerHTML = '<option value="" disabled selected>Failed to load labs — please refresh</option>';
-        sel.disabled  = true;
-        msg.textContent = 'Could not load lab list. Please refresh the page.';
-        msg.className   = 'lab-load-msg error';
-        msg.style.display = 'block';
-    }
-}
-
-<?php if ($sessions_remaining > 0): ?>
-loadConfiguredLabs();
-<?php endif; ?>
-
 function openCancelModal(id) {
     document.getElementById('cancelResId').value = id;
     document.getElementById('cancelModal').classList.add('open');
@@ -1558,11 +1618,7 @@ document.getElementById('cancelModal').addEventListener('click', function(e) {
 });
 
 document.addEventListener('keydown', function(e) {
-    if (e.key === 'Escape') {
-        closeModal();
-        closePcModal();
-        closeNotifDropdown();
-    }
+    if (e.key === 'Escape') { closeModal(); closePcModal(); closeNotifDropdown(); }
 });
 
 document.querySelectorAll('.alert').forEach(function(el) {
@@ -1573,21 +1629,7 @@ document.querySelectorAll('.alert').forEach(function(el) {
     }, 5000);
 });
 
-const dateInput = document.querySelector('input[type="date"]');
-if (dateInput) {
-    dateInput.addEventListener('change', function() {
-        const chosen = new Date(this.value);
-        const today  = new Date();
-        today.setHours(0, 0, 0, 0);
-        if (chosen <= today) {
-            this.setCustomValidity('Please choose a future date.');
-        } else {
-            this.setCustomValidity('');
-        }
-    });
-}
-
-// ── NOTIFICATION DROPDOWN ────────────────────────────────────────────────────
+// ── NOTIFICATION DROPDOWN ────────────────────────────────────────
 let notifData   = [];
 let notifTab    = 'all';
 let notifLoaded = false;
@@ -1622,8 +1664,7 @@ function switchNotifTab(tab) {
 }
 
 function fetchNotifications() {
-    document.getElementById('notifScroll').innerHTML =
-        '<div class="notif-loading-state">Loading…</div>';
+    document.getElementById('notifScroll').innerHTML = '<div class="notif-loading-state">Loading…</div>';
     fetch('/SYSARCH/user/get_notifications.php')
         .then(function(r) { return r.json(); })
         .then(function(data) {
