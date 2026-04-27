@@ -73,6 +73,84 @@ if (
     exit();
 }
 
+// ── AJAX: handle ADD POST, return JSON ──
+if (
+    $_SERVER['REQUEST_METHOD'] === 'POST' &&
+    isset($_POST['add_student']) &&
+    !empty($_SERVER['HTTP_X_REQUESTED_WITH']) &&
+    strtolower($_SERVER['HTTP_X_REQUESTED_WITH']) === 'xmlhttprequest'
+) {
+    header('Content-Type: application/json');
+
+    $id          = trim($_POST['id_number']   ?? '');
+    $last_name   = trim($_POST['last_name']   ?? '');
+    $first_name  = trim($_POST['first_name']  ?? '');
+    $middle_name = trim($_POST['middle_name'] ?? '');
+    $email       = trim($_POST['email']       ?? '');
+    $year_level  = intval($_POST['year_level'] ?? 1);
+    $course      = trim($_POST['course']      ?? '');
+    $sessions    = intval($_POST['sessions']  ?? 30);
+    $raw_pass    = trim($_POST['password']    ?? '');
+
+    // Validate required fields
+    if (!$id || !$last_name || !$first_name || !$raw_pass) {
+        echo json_encode(['success' => false, 'message' => 'ID, Last Name, First Name, and Password are required.']);
+        $conn->close();
+        exit();
+    }
+
+    // Minimum password length
+    if (strlen($raw_pass) < 6) {
+        echo json_encode(['success' => false, 'message' => 'Password must be at least 6 characters.']);
+        $conn->close();
+        exit();
+    }
+
+    // Hash the admin-chosen password
+    $password = password_hash($raw_pass, PASSWORD_BCRYPT);
+
+    // Check for duplicate ID
+    $check = $conn->prepare("SELECT IdNumber FROM student WHERE IdNumber = ?");
+    $check->bind_param('s', $id);
+    $check->execute();
+    $check->store_result();
+    if ($check->num_rows > 0) {
+        echo json_encode(['success' => false, 'message' => 'Student ID already exists.']);
+        $check->close();
+        $conn->close();
+        exit();
+    }
+    $check->close();
+
+    if ($session_col) {
+        $stmt = $conn->prepare("INSERT INTO student (IdNumber, LastName, FirstName, MiddleName, Email, CourseLvl, Course, `$session_col`, Password) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)");
+        $stmt->bind_param('sssssisss', $id, $last_name, $first_name, $middle_name, $email, $year_level, $course, $sessions, $password);
+    } else {
+        $stmt = $conn->prepare("INSERT INTO student (IdNumber, LastName, FirstName, MiddleName, Email, CourseLvl, Course, Password) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
+        $stmt->bind_param('ssssisss', $id, $last_name, $first_name, $middle_name, $email, $year_level, $course, $password);
+    }
+
+    if ($stmt->execute()) {
+        echo json_encode([
+            'success'     => true,
+            'id'          => $id,
+            'first_name'  => $first_name,
+            'middle_name' => $middle_name,
+            'last_name'   => $last_name,
+            'email'       => $email,
+            'year_level'  => $year_level,
+            'course'      => $course,
+            'sessions'    => $sessions,
+        ]);
+    } else {
+        echo json_encode(['success' => false, 'message' => $conn->error]);
+    }
+
+    $stmt->close();
+    $conn->close();
+    exit();
+}
+
 $select_cols = $session_col
     ? "IdNumber, LastName, FirstName, MiddleName, CourseLvl, Course, Email, `$session_col` AS sessions"
     : "IdNumber, LastName, FirstName, MiddleName, CourseLvl, Course, Email";
@@ -322,7 +400,6 @@ $courses = [
             padding: 40px 20px !important; font-size: 13.5px;
         }
 
-        /* ── ROW FLASH ── */
         @keyframes rowFlash {
             0%   { background: #d4f5e2; }
             100% { background: transparent; }
@@ -345,6 +422,7 @@ $courses = [
             box-shadow: 0 20px 60px rgba(15,38,83,0.25);
             width: 100%; max-width: 500px; margin: 20px;
             animation: modalIn 0.25s ease both; overflow: hidden;
+            max-height: 90vh; display: flex; flex-direction: column;
         }
 
         @keyframes modalIn {
@@ -354,7 +432,7 @@ $courses = [
 
         .modal-header {
             background: linear-gradient(135deg, var(--navy) 0%, var(--navy-light) 100%);
-            padding: 16px 22px;
+            padding: 16px 22px; flex-shrink: 0;
             display: flex; align-items: center; justify-content: space-between; color: white;
         }
 
@@ -374,7 +452,7 @@ $courses = [
 
         .modal-close:hover { background: rgba(255,255,255,0.28); }
 
-        .modal-body { padding: 24px 26px 10px; }
+        .modal-body { padding: 24px 26px 10px; overflow-y: auto; }
 
         .modal-field {
             display: grid; grid-template-columns: 140px 1fr;
@@ -406,8 +484,56 @@ $courses = [
 
         .modal-field input[readonly] { color: var(--muted); cursor: not-allowed; background: #f4f6fb; }
 
+        /* ── PASSWORD SECTION ── */
+        .pw-section-label {
+            grid-column: 1 / -1;
+            font-size: 11px; font-weight: 700; color: var(--navy-light);
+            text-transform: uppercase; letter-spacing: 0.6px;
+            padding: 10px 0 4px;
+            border-top: 1.5px dashed var(--border);
+            margin-top: 4px;
+        }
+
+        .password-wrap {
+            display: flex; gap: 6px; width: 100%;
+        }
+
+        .password-wrap input { flex: 1; min-width: 0; }
+
+        .btn-pw-toggle {
+            padding: 7px 10px; border-radius: 8px; font-size: 13px;
+            background: var(--bg); color: var(--muted);
+            border: 1.5px solid var(--border); cursor: pointer; flex-shrink: 0;
+            transition: background 0.15s;
+        }
+
+        .btn-pw-toggle:hover { background: #dde3f0; color: var(--text); }
+
+        .btn-pw-use-id {
+            padding: 7px 11px; border-radius: 8px; font-size: 11.5px; font-weight: 700;
+            font-family: 'DM Sans', sans-serif;
+            background: var(--tag-bg); color: var(--navy-light);
+            border: 1.5px solid var(--border); cursor: pointer; flex-shrink: 0;
+            transition: background 0.15s, border-color 0.15s;
+        }
+
+        .btn-pw-use-id:hover { background: #d0d9f0; border-color: var(--accent); }
+
+        .pw-strength-row {
+            grid-column: 2; display: flex; gap: 4px; padding-top: 6px;
+        }
+
+        .pw-strength-bar {
+            height: 4px; flex: 1; border-radius: 2px;
+            background: var(--border); transition: background 0.3s;
+        }
+
+        .pw-hint {
+            grid-column: 2; font-size: 11px; color: var(--muted); padding-bottom: 4px;
+        }
+
         .modal-footer {
-            padding: 16px 26px 20px;
+            padding: 16px 26px 20px; flex-shrink: 0;
             display: flex; justify-content: flex-end; gap: 10px;
         }
 
@@ -455,6 +581,7 @@ $courses = [
             .page-wrapper { padding: 20px 16px 40px; }
             .page-header { flex-direction: column; align-items: flex-start; }
             .modal-field { grid-template-columns: 1fr; }
+            .pw-strength-row, .pw-hint, .pw-section-label { grid-column: 1; }
         }
     </style>
 </head>
@@ -579,6 +706,103 @@ $courses = [
     </div>
 </div>
 
+<!-- ── ADD STUDENT MODAL ── -->
+<div class="modal-overlay" id="addModalOverlay">
+    <div class="modal">
+        <div class="modal-header">
+            <h3>➕ Add Student</h3>
+            <button class="modal-close" onclick="closeAddModal()">✕</button>
+        </div>
+
+        <div class="modal-body">
+            <div class="modal-field">
+                <label>ID Number</label>
+                <input type="text" id="add_id" required maxlength="20" placeholder="e.g. 22-1234-567">
+            </div>
+            <div class="modal-field">
+                <label>Last Name</label>
+                <input type="text" id="add_last" required maxlength="100">
+            </div>
+            <div class="modal-field">
+                <label>First Name</label>
+                <input type="text" id="add_first" required maxlength="100">
+            </div>
+            <div class="modal-field">
+                <label>Middle Name</label>
+                <input type="text" id="add_middle" maxlength="100">
+            </div>
+            <div class="modal-field">
+                <label>Email</label>
+                <input type="email" id="add_email" maxlength="150">
+            </div>
+            <div class="modal-field">
+                <label>Year Level</label>
+                <select id="add_year">
+                    <option value="1">1st Year</option>
+                    <option value="2">2nd Year</option>
+                    <option value="3">3rd Year</option>
+                    <option value="4">4th Year</option>
+                </select>
+            </div>
+            <div class="modal-field">
+                <label>Course</label>
+                <select id="add_course">
+                    <?php foreach ($courses as $c): ?>
+                    <option value="<?= htmlspecialchars($c) ?>"><?= htmlspecialchars($c) ?></option>
+                    <?php endforeach; ?>
+                </select>
+            </div>
+            <div class="modal-field">
+                <label>Sessions</label>
+                <input type="number" id="add_sessions" min="0" max="999" value="30">
+            </div>
+
+            <!-- Password section divider -->
+            <div class="modal-field" style="border-bottom:none; padding-bottom:0;">
+                <div class="pw-section-label">🔒 Set Password</div>
+            </div>
+
+            <!-- Password input row -->
+            <div class="modal-field" style="padding-top:6px;">
+                <label>Password <span style="color:#e74c3c;">*</span></label>
+                <div class="password-wrap">
+                    <input type="password" id="add_password" maxlength="100"
+                           placeholder="Enter password"
+                           oninput="updateStrength()" autocomplete="new-password">
+                    <button type="button" class="btn-pw-toggle" id="btnTogglePw"
+                            onclick="togglePasswordVisibility()" title="Show / hide">👁️</button>
+                    <button type="button" class="btn-pw-use-id"
+                            onclick="useIdAsPassword()" title="Use ID Number as password">Use ID</button>
+                </div>
+            </div>
+
+            <!-- Strength bars -->
+            <div class="modal-field" style="padding-top:2px; padding-bottom:2px; border-bottom:none;">
+                <span></span>
+                <div class="pw-strength-row">
+                    <div class="pw-strength-bar" id="bar1"></div>
+                    <div class="pw-strength-bar" id="bar2"></div>
+                    <div class="pw-strength-bar" id="bar3"></div>
+                    <div class="pw-strength-bar" id="bar4"></div>
+                </div>
+            </div>
+
+            <!-- Hint text -->
+            <div class="modal-field" style="padding-top:0; border-bottom:none;">
+                <span></span>
+                <span class="pw-hint" id="pwHint">
+                    Min. 6 characters. Click <strong>Use ID</strong> to auto-fill with the student's ID number.
+                </span>
+            </div>
+        </div>
+
+        <div class="modal-footer">
+            <button type="button" class="btn-modal-close" onclick="closeAddModal()">Cancel</button>
+            <button type="button" class="btn-modal-save" id="btnAddSave" onclick="submitAddStudent()">➕ Add Student</button>
+        </div>
+    </div>
+</div>
+
 <!-- ── EDIT MODAL ── -->
 <div class="modal-overlay" id="editModalOverlay">
     <div class="modal">
@@ -644,7 +868,52 @@ $courses = [
 <script>
     let activeRow = null;
 
-    // ── Open modal ──
+    // ── Password helpers ──
+    function togglePasswordVisibility() {
+        const inp = document.getElementById('add_password');
+        const btn = document.getElementById('btnTogglePw');
+        inp.type = inp.type === 'password' ? 'text' : 'password';
+        btn.textContent = inp.type === 'password' ? '👁️' : '🙈';
+    }
+
+    function useIdAsPassword() {
+        const id = document.getElementById('add_id').value.trim();
+        if (!id) { showToast('⚠️ Enter an ID Number first.', 'error'); return; }
+        const inp = document.getElementById('add_password');
+        inp.value = id;
+        inp.type  = 'text';
+        document.getElementById('btnTogglePw').textContent = '🙈';
+        updateStrength();
+    }
+
+    function updateStrength() {
+        const pw   = document.getElementById('add_password').value;
+        const bars = ['bar1','bar2','bar3','bar4'].map(id => document.getElementById(id));
+        const hint = document.getElementById('pwHint');
+
+        let score = 0;
+        if (pw.length >= 6)  score++;
+        if (pw.length >= 10) score++;
+        if (/[A-Z]/.test(pw) && /[a-z]/.test(pw)) score++;
+        if (/[0-9]/.test(pw) && /[^A-Za-z0-9]/.test(pw)) score++;
+
+        const colors = ['#e74c3c','#e67e22','#f0a500','#2ecc71'];
+        const labels = ['Too short','Weak','Moderate','Strong'];
+
+        bars.forEach((b, i) => {
+            b.style.background = i < score ? colors[score - 1] : 'var(--border)';
+        });
+
+        if (!pw.length) {
+            hint.innerHTML = 'Min. 6 characters. Click <strong>Use ID</strong> to auto-fill with the student\'s ID number.';
+        } else if (score < 4) {
+            hint.innerHTML = `Strength: <strong style="color:${colors[score-1]}">${labels[score-1]}</strong> — try uppercase, numbers &amp; symbols.`;
+        } else {
+            hint.innerHTML = `Strength: <strong style="color:#2ecc71">Strong ✅</strong>`;
+        }
+    }
+
+    // ── Open edit modal ──
     function openEditModal(btn) {
         activeRow = btn.closest('tr');
         document.getElementById('modal_id').value       = activeRow.dataset.id;
@@ -656,15 +925,12 @@ $courses = [
         document.getElementById('modal_sessions').value = activeRow.dataset.sessions;
 
         const courseSelect = document.getElementById('modal_course');
-        for (let opt of courseSelect.options) {
-            opt.selected = (opt.value === activeRow.dataset.course);
-        }
+        for (let opt of courseSelect.options) opt.selected = (opt.value === activeRow.dataset.course);
 
         document.getElementById('editModalOverlay').classList.add('open');
         document.body.style.overflow = 'hidden';
     }
 
-    // ── Close modal ──
     function closeEditModal() {
         document.getElementById('editModalOverlay').classList.remove('open');
         document.body.style.overflow = '';
@@ -675,11 +941,121 @@ $courses = [
         if (e.target === this) closeEditModal();
     });
 
-    document.addEventListener('keydown', function(e) {
-        if (e.key === 'Escape') closeEditModal();
+    // ── Open add modal ──
+    function addStudent() {
+        ['add_id','add_last','add_first','add_middle','add_email','add_password'].forEach(id => {
+            document.getElementById(id).value = '';
+        });
+        document.getElementById('add_year').value     = '1';
+        document.getElementById('add_sessions').value = '30';
+        document.getElementById('add_course').selectedIndex = 0;
+        document.getElementById('add_password').type  = 'password';
+        document.getElementById('btnTogglePw').textContent = '👁️';
+        updateStrength();
+
+        document.getElementById('addModalOverlay').classList.add('open');
+        document.body.style.overflow = 'hidden';
+        document.getElementById('add_id').focus();
+    }
+
+    function closeAddModal() {
+        document.getElementById('addModalOverlay').classList.remove('open');
+        document.body.style.overflow = '';
+    }
+
+    document.getElementById('addModalOverlay').addEventListener('click', function(e) {
+        if (e.target === this) closeAddModal();
     });
 
-    // ── Save via AJAX — update row in-place ──
+    document.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape') { closeEditModal(); closeAddModal(); }
+    });
+
+    // ── Submit add student ──
+    function submitAddStudent() {
+        const id       = document.getElementById('add_id').value.trim();
+        const last     = document.getElementById('add_last').value.trim();
+        const first    = document.getElementById('add_first').value.trim();
+        const password = document.getElementById('add_password').value;
+
+        if (!id || !last || !first) {
+            showToast('❌ ID Number, Last Name, and First Name are required.', 'error'); return;
+        }
+        if (!password) {
+            showToast('❌ Please set a password for this student.', 'error');
+            document.getElementById('add_password').focus(); return;
+        }
+        if (password.length < 6) {
+            showToast('❌ Password must be at least 6 characters.', 'error');
+            document.getElementById('add_password').focus(); return;
+        }
+
+        const btn = document.getElementById('btnAddSave');
+        btn.disabled = true;
+        btn.textContent = '⏳ Adding…';
+
+        const payload = new FormData();
+        payload.append('add_student', '1');
+        payload.append('id_number',   id);
+        payload.append('last_name',   last);
+        payload.append('first_name',  first);
+        payload.append('middle_name', document.getElementById('add_middle').value.trim());
+        payload.append('email',       document.getElementById('add_email').value.trim());
+        payload.append('year_level',  document.getElementById('add_year').value);
+        payload.append('course',      document.getElementById('add_course').value);
+        payload.append('sessions',    document.getElementById('add_sessions').value);
+        payload.append('password',    password);
+
+        fetch(window.location.href, {
+            method: 'POST',
+            headers: { 'X-Requested-With': 'XMLHttpRequest' },
+            body: payload
+        })
+        .then(r => r.json())
+        .then(data => {
+            if (data.success) {
+                const emptyRow = document.querySelector('#tableBody .empty-row');
+                if (emptyRow) emptyRow.remove();
+
+                const fullName = [data.first_name, data.middle_name, data.last_name].filter(Boolean).join(' ');
+                const tr = document.createElement('tr');
+                tr.dataset.id = data.id; tr.dataset.first = data.first_name;
+                tr.dataset.middle = data.middle_name; tr.dataset.last = data.last_name;
+                tr.dataset.email = data.email; tr.dataset.year = data.year_level;
+                tr.dataset.course = data.course; tr.dataset.sessions = data.sessions;
+
+                tr.innerHTML = `
+                    <td class="id-cell">${data.id}</td>
+                    <td class="col-name">${fullName}</td>
+                    <td class="col-year">Year ${data.year_level}</td>
+                    <td class="col-course">${data.course}</td>
+                    <td class="col-sessions">
+                        <span class="sess-badge" style="display:inline-flex;align-items:center;gap:5px;background:var(--tag-bg);border:1px solid var(--border);border-radius:20px;padding:3px 11px;font-size:11.5px;font-weight:700;color:var(--navy-light);">
+                            💻 ${data.sessions}
+                        </span>
+                    </td>
+                    <td>
+                        <button class="btn-edit" onclick="openEditModal(this)">✏️ Edit</button>
+                        <button class="btn-delete" onclick="deleteStudent('${data.id}')">🗑️ Delete</button>
+                    </td>`;
+
+                document.getElementById('tableBody').prepend(tr);
+                allRows.unshift(tr);
+                void tr.offsetWidth;
+                tr.classList.add('updated');
+
+                closeAddModal();
+                applyFilter();
+                showToast(`✅ Student ${data.id} added successfully!`, 'success');
+            } else {
+                showToast('❌ ' + (data.message || 'Failed to add student.'), 'error');
+            }
+        })
+        .catch(() => showToast('❌ Network error. Please try again.', 'error'))
+        .finally(() => { btn.disabled = false; btn.textContent = '➕ Add Student'; });
+    }
+
+    // ── Save edit via AJAX ──
     function saveStudent() {
         const btn = document.getElementById('btnSave');
         btn.disabled = true;
@@ -704,23 +1080,16 @@ $courses = [
         .then(r => r.json())
         .then(data => {
             if (data.success) {
-                // ── Update data-* attributes on the row ──
-                activeRow.dataset.first    = data.first_name;
-                activeRow.dataset.middle   = data.middle_name;
-                activeRow.dataset.last     = data.last_name;
-                activeRow.dataset.email    = data.email;
-                activeRow.dataset.year     = data.year_level;
-                activeRow.dataset.course   = data.course;
+                activeRow.dataset.first = data.first_name; activeRow.dataset.middle = data.middle_name;
+                activeRow.dataset.last = data.last_name;   activeRow.dataset.email = data.email;
+                activeRow.dataset.year = data.year_level;  activeRow.dataset.course = data.course;
                 activeRow.dataset.sessions = data.sessions;
 
-                // ── Update visible cells ──
-                const fullName = [data.first_name, data.middle_name, data.last_name]
-                    .filter(Boolean).join(' ');
-                activeRow.querySelector('.col-name').textContent    = fullName;
-                activeRow.querySelector('.col-year').textContent    = 'Year ' + data.year_level;
-                activeRow.querySelector('.col-course').textContent  = data.course;
+                const fullName = [data.first_name, data.middle_name, data.last_name].filter(Boolean).join(' ');
+                activeRow.querySelector('.col-name').textContent   = fullName;
+                activeRow.querySelector('.col-year').textContent   = 'Year ' + data.year_level;
+                activeRow.querySelector('.col-course').textContent = data.course;
 
-                // Update sessions badge
                 const sessCell = activeRow.querySelector('.col-sessions');
                 let badge = sessCell.querySelector('.sess-badge');
                 if (!badge) {
@@ -732,9 +1101,8 @@ $courses = [
                 }
                 badge.textContent = '💻 ' + data.sessions;
 
-                // ── Flash the row green ──
                 activeRow.classList.remove('updated');
-                void activeRow.offsetWidth; // reflow to restart animation
+                void activeRow.offsetWidth;
                 activeRow.classList.add('updated');
 
                 closeEditModal();
@@ -744,10 +1112,7 @@ $courses = [
             }
         })
         .catch(() => showToast('❌ Network error. Please try again.', 'error'))
-        .finally(() => {
-            btn.disabled = false;
-            btn.textContent = '💾 Save Changes';
-        });
+        .finally(() => { btn.disabled = false; btn.textContent = '💾 Save Changes'; });
     }
 
     // ── Toast ──
@@ -774,10 +1139,8 @@ $courses = [
         });
 
         const start = (currentPage - 1) * perPage;
-        const end   = start + perPage;
-
         filtered.forEach((row, i) => {
-            row.style.display = (i >= start && i < end) ? '' : 'none';
+            row.style.display = (i >= start && i < start + perPage) ? '' : 'none';
         });
 
         const showing = Math.min(perPage, filtered.length - start);
@@ -794,27 +1157,19 @@ $courses = [
     function sortTable(col) {
         const tbody = document.getElementById('tableBody');
         const rows  = Array.from(tbody.querySelectorAll('tr:not(.empty-row)'));
-        rows.sort((a, b) => {
-            const aText = a.cells[col]?.innerText.trim() ?? '';
-            const bText = b.cells[col]?.innerText.trim() ?? '';
-            return aText.localeCompare(bText);
-        });
+        rows.sort((a, b) => (a.cells[col]?.innerText.trim() ?? '').localeCompare(b.cells[col]?.innerText.trim() ?? ''));
         rows.forEach(r => tbody.appendChild(r));
         applyFilter();
     }
 
     function deleteStudent(id) {
-        if (confirm('Are you sure you want to delete student ' + id + '?')) {
+        if (confirm('Are you sure you want to delete student ' + id + '?'))
             window.location.href = 'delete_student.php?id=' + id;
-        }
     }
 
-    function addStudent()    { window.location.href = 'add_student.php'; }
-
     function resetSessions() {
-        if (confirm('Reset all student sessions? This cannot be undone.')) {
+        if (confirm('Reset all student sessions? This cannot be undone.'))
             window.location.href = 'reset_sessions.php';
-        }
     }
 </script>
 
