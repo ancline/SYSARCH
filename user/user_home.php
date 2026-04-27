@@ -65,6 +65,76 @@ $nstmt->bind_result($unread_count);
 $nstmt->fetch();
 $nstmt->close();
 
+// ── Sit-in Summary Stats ──
+$summary = [
+    'total_hours'      => 0,
+    'num_sessions'     => 0,
+    'avg_duration_min' => 0,
+    'longest_min'      => 0,
+];
+
+$sitin_table_check = $conn->query("SHOW TABLES LIKE 'sitin'");
+if ($sitin_table_check && $sitin_table_check->num_rows > 0) {
+    $sstmt = $conn->prepare("
+        SELECT
+            COUNT(*)                                                                        AS num_sessions,
+            COALESCE(SUM(TIMESTAMPDIFF(MINUTE, time_in, COALESCE(time_out, NOW()))),  0)   AS total_minutes,
+            COALESCE(AVG(TIMESTAMPDIFF(MINUTE, time_in, COALESCE(time_out, NOW()))),  0)   AS avg_minutes,
+            COALESCE(MAX(TIMESTAMPDIFF(MINUTE, time_in, COALESCE(time_out, NOW()))),  0)   AS longest_minutes
+        FROM sitin
+        WHERE student_id = ?
+          AND time_in IS NOT NULL
+    ");
+    $sstmt->bind_param('s', $_SESSION['student_id']);
+    $sstmt->execute();
+    $sr = $sstmt->get_result()->fetch_assoc();
+    if ($sr) {
+        $summary['num_sessions']     = (int)$sr['num_sessions'];
+        $summary['total_hours']      = round($sr['total_minutes'] / 60, 1);
+        $summary['avg_duration_min'] = round($sr['avg_minutes']);
+        $summary['longest_min']      = round($sr['longest_minutes']);
+    }
+    $sstmt->close();
+}
+
+// ── Sessions Table ──
+$session_rows = [];
+$sitin_table_check2 = $conn->query("SHOW TABLES LIKE 'sitin'");
+if ($sitin_table_check2 && $sitin_table_check2->num_rows > 0) {
+    $trstmt = $conn->prepare("
+        SELECT
+            DATE(time_in)                                                               AS date,
+            time_in,
+            time_out,
+            TIMESTAMPDIFF(MINUTE, time_in, COALESCE(time_out, NOW()))                  AS duration_minutes,
+            COALESCE(lab, '—')                                                          AS pc_number,
+            CASE WHEN time_out IS NULL THEN 'active' ELSE 'completed' END              AS status
+        FROM sitin
+        WHERE student_id = ?
+          AND time_in IS NOT NULL
+        ORDER BY time_in DESC
+        LIMIT 50
+    ");
+    $trstmt->bind_param('s', $_SESSION['student_id']);
+    $trstmt->execute();
+    $tr = $trstmt->get_result();
+    while ($r = $tr->fetch_assoc()) {
+        $session_rows[] = $r;
+    }
+    $trstmt->close();
+}
+
+// ── Reservation Enabled/Disabled setting ──
+$reservation_enabled = true;
+$settings_check = $conn->query("SHOW TABLES LIKE 'settings'");
+if ($settings_check && $settings_check->num_rows > 0) {
+    $set_r = $conn->query("SELECT setting_value FROM settings WHERE setting_key = 'reservation_enabled' LIMIT 1");
+    if ($set_r && $set_r->num_rows > 0) {
+        $set_row = $set_r->fetch_assoc();
+        $reservation_enabled = (bool)(int)$set_row['setting_value'];
+    }
+}
+
 $conn->close();
 ?>
 <!DOCTYPE html>
@@ -89,6 +159,8 @@ $conn->close();
             --muted:      #6b7fa3;
             --accent:     #3b6fd4;
             --tag-bg:     #e8edf8;
+            --green:      #0fa86a;
+            --red:        #e53535;
         }
 
         * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -276,7 +348,16 @@ $conn->close();
             display: grid;
             grid-template-columns: 340px 1fr 380px;
             gap: 20px; padding: 24px 28px;
-            min-height: calc(100vh - 60px); align-items: start;
+            align-items: start;
+        }
+
+        /* Bottom row spans full width */
+        .bottom-row {
+            grid-column: 1 / -1;
+            display: grid;
+            grid-template-columns: 1fr 2fr;
+            gap: 20px;
+            align-items: start;
         }
 
         /* ── CARD BASE ── */
@@ -439,9 +520,330 @@ $conn->close();
 
         .rule-text { font-size: 12.5px; line-height: 1.6; color: #3a4a6b; }
 
+        /* ══════════════════════════════════════════════
+           SIT-IN SUMMARY + RESERVATION SIDE CARD
+        ══════════════════════════════════════════════ */
+
+        /* Summary Stats Grid */
+        .summary-body { padding: 22px 20px; }
+
+        .stat-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+            margin-bottom: 22px;
+        }
+
+        .stat-tile {
+            background: var(--tag-bg);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 16px 14px;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            transition: box-shadow 0.2s, transform 0.2s;
+        }
+
+        .stat-tile:hover {
+            box-shadow: 0 4px 16px rgba(15,38,83,0.1);
+            transform: translateY(-2px);
+        }
+
+        .stat-tile .st-icon {
+            font-size: 22px;
+            line-height: 1;
+        }
+
+        .stat-tile .st-value {
+            font-family: 'DM Serif Display', serif;
+            font-size: 26px;
+            color: var(--navy);
+            line-height: 1;
+        }
+
+        .stat-tile .st-unit {
+            font-size: 11px;
+            font-weight: 700;
+            color: var(--accent);
+            text-transform: uppercase;
+            letter-spacing: 0.4px;
+        }
+
+        .stat-tile .st-label {
+            font-size: 11px;
+            color: var(--muted);
+            font-weight: 500;
+        }
+
+        .stat-tile.highlight {
+            background: linear-gradient(135deg, var(--navy) 0%, var(--navy-light) 100%);
+            border-color: transparent;
+        }
+
+        .stat-tile.highlight .st-value,
+        .stat-tile.highlight .st-label,
+        .stat-tile.highlight .st-unit { color: rgba(255,255,255,0.9); }
+
+        /* ── RESERVATION TOGGLE SECTION ── */
+        .reservation-section {
+            border-top: 1px solid var(--border);
+            padding-top: 18px;
+        }
+
+        .reservation-section h5 {
+            font-size: 12px;
+            font-weight: 800;
+            color: var(--navy);
+            text-transform: uppercase;
+            letter-spacing: 0.6px;
+            margin-bottom: 12px;
+            display: flex;
+            align-items: center;
+            gap: 7px;
+        }
+
+        .reservation-status-card {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            padding: 14px 16px;
+            border-radius: 12px;
+            border: 1.5px solid;
+            transition: all 0.3s ease;
+        }
+
+        .reservation-status-card.enabled {
+            background: #f0fdf8;
+            border-color: #a7f3d0;
+        }
+
+        .reservation-status-card.disabled {
+            background: #fef2f2;
+            border-color: #fecaca;
+        }
+
+        .res-status-icon {
+            width: 42px; height: 42px;
+            border-radius: 12px;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 20px; flex-shrink: 0;
+        }
+
+        .reservation-status-card.enabled  .res-status-icon { background: #d1fae5; }
+        .reservation-status-card.disabled .res-status-icon { background: #fee2e2; }
+
+        .res-status-info { flex: 1; }
+
+        .res-status-title {
+            font-size: 13px;
+            font-weight: 700;
+            margin-bottom: 2px;
+        }
+
+        .reservation-status-card.enabled  .res-status-title { color: #065f46; }
+        .reservation-status-card.disabled .res-status-title { color: #991b1b; }
+
+        .res-status-sub {
+            font-size: 11.5px;
+            color: var(--muted);
+        }
+
+        .res-status-pill {
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 11px;
+            font-weight: 800;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .reservation-status-card.enabled  .res-status-pill { background: #d1fae5; color: #065f46; }
+        .reservation-status-card.disabled .res-status-pill { background: #fee2e2; color: #991b1b; }
+
+        .btn-go-reserve {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 7px;
+            width: 100%;
+            margin-top: 12px;
+            padding: 11px;
+            border-radius: 10px;
+            font-size: 13px;
+            font-weight: 700;
+            font-family: 'DM Sans', sans-serif;
+            cursor: pointer;
+            text-decoration: none;
+            transition: all 0.2s;
+            border: none;
+        }
+
+        .btn-go-reserve.active {
+            background: linear-gradient(135deg, var(--navy), var(--accent));
+            color: white;
+            box-shadow: 0 3px 12px rgba(36,82,160,0.35);
+        }
+
+        .btn-go-reserve.active:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 18px rgba(36,82,160,0.45);
+        }
+
+        .btn-go-reserve.inactive {
+            background: #f1f3f7;
+            color: #a0aec0;
+            cursor: not-allowed;
+            border: 1px solid var(--border);
+        }
+
+        /* ══════════════════════════════════════════════
+           SESSIONS TABLE CARD
+        ══════════════════════════════════════════════ */
+
+        .sessions-body { padding: 0; }
+
+        .sessions-toolbar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 14px 18px;
+            border-bottom: 1px solid var(--border);
+            background: #fafbfd;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
+        .sessions-toolbar .total-badge {
+            font-size: 12px;
+            font-weight: 700;
+            color: var(--navy);
+            background: var(--tag-bg);
+            border: 1px solid var(--border);
+            border-radius: 20px;
+            padding: 4px 12px;
+        }
+
+        .sessions-search {
+            display: flex;
+            align-items: center;
+            gap: 7px;
+            background: white;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 6px 10px;
+            font-size: 12.5px;
+            color: var(--muted);
+        }
+
+        .sessions-search input {
+            border: none;
+            outline: none;
+            font-family: 'DM Sans', sans-serif;
+            font-size: 12.5px;
+            color: var(--text);
+            background: transparent;
+            width: 160px;
+        }
+
+        .sessions-table-wrap {
+            overflow-x: auto;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+
+        .sessions-table-wrap::-webkit-scrollbar { width: 5px; height: 5px; }
+        .sessions-table-wrap::-webkit-scrollbar-track { background: transparent; }
+        .sessions-table-wrap::-webkit-scrollbar-thumb { background: var(--border); border-radius: 10px; }
+
+        table.sessions-tbl {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 13px;
+        }
+
+        table.sessions-tbl thead {
+            background: var(--tag-bg);
+            position: sticky; top: 0; z-index: 1;
+        }
+
+        table.sessions-tbl thead th {
+            padding: 10px 14px;
+            text-align: left;
+            font-size: 11px;
+            font-weight: 800;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: var(--navy);
+            white-space: nowrap;
+            border-bottom: 2px solid var(--border);
+        }
+
+        table.sessions-tbl tbody tr {
+            border-bottom: 1px solid #f2f4fb;
+            transition: background 0.13s;
+        }
+
+        table.sessions-tbl tbody tr:last-child { border-bottom: none; }
+        table.sessions-tbl tbody tr:hover { background: #f5f7fd; }
+
+        table.sessions-tbl tbody td {
+            padding: 10px 14px;
+            color: var(--text);
+            white-space: nowrap;
+        }
+
+        .sessions-empty {
+            text-align: center;
+            padding: 40px 20px;
+            color: var(--muted);
+        }
+
+        .sessions-empty .sei { font-size: 36px; opacity: 0.25; margin-bottom: 8px; }
+        .sessions-empty p { font-size: 12.5px; }
+
+        /* Status pill in table */
+        .status-pill {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            padding: 3px 10px;
+            border-radius: 20px;
+            font-size: 11px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.3px;
+        }
+
+        .status-pill.completed { background: #d1fae5; color: #065f46; }
+        .status-pill.active    { background: #dbeafe; color: #1e40af; }
+        .status-pill.timeout   { background: #fef3c7; color: #92400e; }
+        .status-pill.cancelled { background: #fee2e2; color: #991b1b; }
+
+        .pc-badge {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            background: var(--tag-bg);
+            border: 1px solid var(--border);
+            border-radius: 7px;
+            padding: 2px 9px;
+            font-size: 12px;
+            font-weight: 700;
+            color: var(--navy);
+            min-width: 36px;
+        }
+
+        .duration-val {
+            font-weight: 600;
+            color: var(--navy-light);
+        }
+
         @media (max-width: 960px) {
             .dashboard { grid-template-columns: 1fr; padding: 16px; }
+            .bottom-row { grid-template-columns: 1fr; }
             .notif-dropdown { width: calc(100vw - 20px); right: -10px; }
+            .stat-grid { grid-template-columns: 1fr 1fr; }
         }
     </style>
 </head>
@@ -493,7 +895,7 @@ $conn->close();
     </div>
 </div>
 
-<!-- DASHBOARD -->
+<!-- TOP ROW: 3-column -->
 <div class="dashboard">
 
     <!-- LEFT: Student Info -->
@@ -625,7 +1027,164 @@ $conn->close();
         </div>
     </div>
 
-</div>
+    <!-- BOTTOM ROW: Full-width spanning both columns -->
+    <div class="bottom-row">
+
+        <!-- LEFT: Sit-in Summary + Reservation Toggle -->
+        <div class="card" style="animation-delay:0.25s;">
+            <div class="card-header">
+                <div class="hicon">📊</div>
+                My Sit-in Summary
+            </div>
+            <div class="summary-body">
+
+                <!-- Stat Tiles -->
+                <div class="stat-grid">
+                    <div class="stat-tile highlight">
+                        <div class="st-icon">⏱️</div>
+                        <div class="st-value"><?= $summary['total_hours'] ?></div>
+                        <div class="st-unit">hrs total</div>
+                        <div class="st-label">Total Sit-in Hours</div>
+                    </div>
+                    <div class="stat-tile">
+                        <div class="st-icon">🖥️</div>
+                        <div class="st-value"><?= $summary['num_sessions'] ?></div>
+                        <div class="st-unit">sessions</div>
+                        <div class="st-label">Number of Sessions</div>
+                    </div>
+                    <div class="stat-tile">
+                        <div class="st-icon">📈</div>
+                        <div class="st-value"><?= $summary['avg_duration_min'] ?></div>
+                        <div class="st-unit">min avg</div>
+                        <div class="st-label">Avg Session Duration</div>
+                    </div>
+                    <div class="stat-tile">
+                        <div class="st-icon">🏆</div>
+                        <div class="st-value"><?= $summary['longest_min'] >= 60
+                            ? round($summary['longest_min'] / 60, 1) . '<span style="font-size:14px;font-weight:500"> hr</span>'
+                            : $summary['longest_min'] . '<span style="font-size:14px;font-weight:500"> m</span>' ?></div>
+                        <div class="st-unit">longest session</div>
+                        <div class="st-label">Best Single Session</div>
+                    </div>
+                </div>
+
+                <!-- Reservation Toggle -->
+                <div class="reservation-section">
+                    <h5>📅 Reservation Status</h5>
+
+                    <?php if ($reservation_enabled): ?>
+                    <div class="reservation-status-card enabled">
+                        <div class="res-status-icon">✅</div>
+                        <div class="res-status-info">
+                            <div class="res-status-title">Reservations Open</div>
+                            <div class="res-status-sub">You can book a lab slot now</div>
+                        </div>
+                        <div class="res-status-pill">Open</div>
+                    </div>
+                    <a href="/SYSARCH/user/reservation.php" class="btn-go-reserve active">
+                        📅 Go to Reservation
+                    </a>
+                    <?php else: ?>
+                    <div class="reservation-status-card disabled">
+                        <div class="res-status-icon">🚫</div>
+                        <div class="res-status-info">
+                            <div class="res-status-title">Reservations Disabled</div>
+                            <div class="res-status-sub">Admin has turned off reservations</div>
+                        </div>
+                        <div class="res-status-pill">Closed</div>
+                    </div>
+                    <button class="btn-go-reserve inactive" disabled>
+                        🚫 Reservation Unavailable
+                    </button>
+                    <?php endif; ?>
+                </div>
+
+            </div>
+        </div>
+
+        <!-- RIGHT: Sessions Table -->
+        <div class="card" style="animation-delay:0.30s;">
+            <div class="card-header">
+                <div class="hicon">📋</div>
+                My Sessions
+            </div>
+            <div class="sessions-body">
+
+                <div class="sessions-toolbar">
+                    <span class="total-badge">
+                        <?= count($session_rows) ?> record<?= count($session_rows) !== 1 ? 's' : '' ?>
+                    </span>
+                    <div class="sessions-search">
+                        🔍
+                        <input type="text" id="sessionSearch" placeholder="Search date, PC, status…" oninput="filterSessions()">
+                    </div>
+                </div>
+
+                <div class="sessions-table-wrap">
+                    <?php if (empty($session_rows)): ?>
+                    <div class="sessions-empty">
+                        <div class="sei">💻</div>
+                        <p>No sit-in sessions recorded yet.</p>
+                    </div>
+                    <?php else: ?>
+                    <table class="sessions-tbl" id="sessionsTable">
+                        <thead>
+                            <tr>
+                                <th>#</th>
+                                <th>Date</th>
+                                <th>Time In</th>
+                                <th>Timeout</th>
+                                <th>Duration</th>
+                                <th>PC No.</th>
+                                <th>Status</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                        <?php foreach ($session_rows as $i => $sr): ?>
+                            <?php
+                                $dur = (int)($sr['duration_minutes'] ?? 0);
+                                $dur_str = $dur >= 60
+                                    ? floor($dur / 60) . 'h ' . ($dur % 60) . 'm'
+                                    : $dur . ' min';
+
+                                $status_raw  = strtolower(trim($sr['status'] ?? 'unknown'));
+                                $status_map  = [
+                                    'completed' => ['label' => 'Completed', 'class' => 'completed'],
+                                    'active'    => ['label' => 'Active',    'class' => 'active'],
+                                    'timeout'   => ['label' => 'Timeout',   'class' => 'timeout'],
+                                    'cancelled' => ['label' => 'Cancelled', 'class' => 'cancelled'],
+                                ];
+                                $sp = $status_map[$status_raw] ?? ['label' => ucfirst($status_raw), 'class' => 'timeout'];
+
+                                $date_fmt   = $sr['date']     ? date('M d, Y',  strtotime($sr['date']))     : '—';
+                                $timein_fmt = $sr['time_in']  ? date('h:i A',   strtotime($sr['time_in']))  : '—';
+                                $tout_fmt   = $sr['time_out'] ? date('h:i A',   strtotime($sr['time_out'])) : '—';
+                                $pc         = $sr['pc_number'] ?? '—';
+                            ?>
+                            <tr>
+                                <td style="color:var(--muted);font-size:11px;"><?= $i + 1 ?></td>
+                                <td><?= htmlspecialchars($date_fmt) ?></td>
+                                <td><?= htmlspecialchars($timein_fmt) ?></td>
+                                <td><?= htmlspecialchars($tout_fmt) ?></td>
+                                <td><span class="duration-val"><?= htmlspecialchars($dur_str) ?></span></td>
+                                <td><span class="pc-badge"><?= htmlspecialchars($pc) ?></span></td>
+                                <td>
+                                    <span class="status-pill <?= $sp['class'] ?>">
+                                        <?= htmlspecialchars($sp['label']) ?>
+                                    </span>
+                                </td>
+                            </tr>
+                        <?php endforeach; ?>
+                        </tbody>
+                    </table>
+                    <?php endif; ?>
+                </div>
+            </div>
+        </div>
+
+    </div><!-- /bottom-row -->
+
+</div><!-- /dashboard -->
 
 <script>
 // ── NOTIFICATION DROPDOWN ────────────────────────────────────────────────────
@@ -755,6 +1314,17 @@ function timeAgo(dt) {
 
 function esc(s) {
     return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// ── SESSIONS TABLE SEARCH ────────────────────────────────────────────────────
+function filterSessions() {
+    const q   = document.getElementById('sessionSearch').value.toLowerCase();
+    const tbl = document.getElementById('sessionsTable');
+    if (!tbl) return;
+    const rows = tbl.querySelectorAll('tbody tr');
+    rows.forEach(function(row) {
+        row.style.display = row.textContent.toLowerCase().includes(q) ? '' : 'none';
+    });
 }
 </script>
 
