@@ -327,7 +327,7 @@ $conn->close();
         }
         .notif-item-msg {
             font-size: 12px; color: var(--muted); line-height: 1.45;
-            display: -webkit-box; -webkit-line-clamp: 2;
+            display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2;
             -webkit-box-orient: vertical; overflow: hidden;
         }
         .notif-item-time { font-size: 11px; color: #a0aec0; margin-top: 4px; font-weight: 500; }
