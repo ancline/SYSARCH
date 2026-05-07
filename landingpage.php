@@ -17,10 +17,12 @@ $conn = new mysqli($host, $user, $pass, $db);
 $top10 = [];
 if (!$conn->connect_error) {
     $result = $conn->query("
-        SELECT student_id, student_name, MAX(sessions) AS top_sessions
+        SELECT student_id, student_name,
+               SUM(TIMESTAMPDIFF(MINUTE, time_in, time_out)) AS total_minutes
         FROM sitin
+        WHERE time_in IS NOT NULL AND time_out IS NOT NULL
         GROUP BY student_id, student_name
-        ORDER BY top_sessions DESC
+        ORDER BY total_minutes DESC
         LIMIT 10
     ");
     while ($row = $result->fetch_assoc()) {
@@ -43,6 +45,17 @@ function shortName($name) {
     $first = $parts[0];
     $last  = count($parts) > 1 ? strtoupper(substr(end($parts), 0, 1)) . '.' : '';
     return $last ? "$first $last" : $first;
+}
+
+// Format total minutes → "Xh Ym", "Xh", or "Ym"
+function formatDuration($minutes) {
+    $minutes = (int)$minutes;
+    if ($minutes <= 0) return '0m';
+    $h = intdiv($minutes, 60);
+    $m = $minutes % 60;
+    if ($h > 0 && $m > 0) return "{$h}h {$m}m";
+    if ($h > 0) return "{$h}h";
+    return "{$m}m";
 }
 ?>
 
@@ -80,7 +93,7 @@ body { font-family: 'DM Sans', sans-serif; background-color: var(--bg); min-heig
 .main { display: flex; justify-content: center; align-items: stretch; min-height: calc(100vh - 60px); padding: 48px 24px; gap: 24px; flex-wrap: wrap; }
 
 /* SHARED CARD */
-.welcome-card, .leaderboard-card { background: var(--panel); border-radius: 20px; box-shadow: 0 4px 24px rgba(15,38,83,0.10); border: 1px solid var(--border); width: 100%; max-width: 460px; overflow: hidden; display: flex; flex-direction: column; animation: fadeUp 0.5s ease both; }
+.welcome-card, .leaderboard-card { background: var(--panel); border-radius: 20px; box-shadow: 0 4px 24px rgba(15,38,83,0.10); border: 1px solid var(--border); width: 100%; max-width: 560px; overflow: hidden; display: flex; flex-direction: column; animation: fadeUp 0.5s ease both; }
 .leaderboard-card { animation-delay: 0.1s; }
 @keyframes fadeUp { from { opacity: 0; transform: translateY(18px); } to { opacity: 1; transform: translateY(0); } }
 
@@ -112,7 +125,7 @@ body { font-family: 'DM Sans', sans-serif; background-color: var(--bg); min-heig
 .podium-avatar { width: 44px; height: 44px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 700; position: relative; flex-shrink: 0; }
 .podium-crown { position: absolute; top: -14px; font-size: 14px; line-height: 1; }
 .podium-name { font-size: 11.5px; font-weight: 600; color: var(--text); text-align: center; line-height: 1.25; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; width: 100%; }
-.podium-sessions { font-size: 10.5px; color: var(--muted); text-align: center; }
+.podium-duration { font-size: 10.5px; color: var(--muted); text-align: center; }
 .podium-bar { width: 100%; border-radius: 8px 8px 0 0; display: flex; align-items: center; justify-content: center; font-size: 20px; font-weight: 800; }
 .p1-bar { height: 74px; background: linear-gradient(180deg, var(--gold) 0%, var(--gold-light) 100%); color: #7a4800; }
 .p2-bar { height: 54px; background: linear-gradient(180deg, #c8d0e0 0%, #dde3ee 100%); color: var(--muted); }
@@ -162,9 +175,9 @@ body { font-family: 'DM Sans', sans-serif; background-color: var(--bg); min-heig
 .modal-rank-info { flex: 1; min-width: 0; }
 .modal-rank-name { font-size: 13.5px; font-weight: 600; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .modal-rank-id { font-size: 11px; color: var(--muted); margin-top: 2px; }
-.modal-rank-sessions { text-align: right; flex-shrink: 0; }
-.modal-rank-sessions .num { font-size: 16px; font-weight: 700; color: var(--navy); display: block; }
-.modal-rank-sessions .lbl { font-size: 10px; color: var(--muted); }
+.modal-rank-duration { text-align: right; flex-shrink: 0; }
+.modal-rank-duration .num { font-size: 15px; font-weight: 700; color: var(--navy); display: block; }
+.modal-rank-duration .lbl { font-size: 10px; color: var(--muted); }
 .modal-empty { text-align: center; padding: 40px; color: var(--muted); font-size: 14px; }
 </style>
 </head>
@@ -195,7 +208,7 @@ body { font-family: 'DM Sans', sans-serif; background-color: var(--bg); min-heig
             <div class="lb-icon">🏆</div>
             <div class="lb-title-wrap">
                 <h3>Top Sit-in Students</h3>
-                <p>Most lab sessions this semester</p>
+                <p>Longest total lab time this semester</p>
             </div>
         </div>
 
@@ -208,7 +221,7 @@ body { font-family: 'DM Sans', sans-serif; background-color: var(--bg); min-heig
                 <div class="podium-item">
                     <div class="podium-avatar av-blue"><?= htmlspecialchars(getInitials($p2['student_name'])) ?></div>
                     <div class="podium-name"><?= htmlspecialchars(shortName($p2['student_name'])) ?></div>
-                    <div class="podium-sessions"><?= (int)$p2['top_sessions'] ?> sessions</div>
+                    <div class="podium-duration"><?= formatDuration($p2['total_minutes']) ?></div>
                     <div class="podium-bar p2-bar">2</div>
                 </div>
                 <!-- 1st place -->
@@ -218,18 +231,34 @@ body { font-family: 'DM Sans', sans-serif; background-color: var(--bg); min-heig
                         <?= htmlspecialchars(getInitials($p1['student_name'])) ?>
                     </div>
                     <div class="podium-name"><?= htmlspecialchars(shortName($p1['student_name'])) ?></div>
-                    <div class="podium-sessions"><?= (int)$p1['top_sessions'] ?> sessions</div>
+                    <div class="podium-duration"><?= formatDuration($p1['total_minutes']) ?></div>
                     <div class="podium-bar p1-bar">1</div>
                 </div>
                 <!-- 3rd place -->
                 <div class="podium-item">
                     <div class="podium-avatar av-bronze"><?= htmlspecialchars(getInitials($p3['student_name'])) ?></div>
                     <div class="podium-name"><?= htmlspecialchars(shortName($p3['student_name'])) ?></div>
-                    <div class="podium-sessions"><?= (int)$p3['top_sessions'] ?> sessions</div>
+                    <div class="podium-duration"><?= formatDuration($p3['total_minutes']) ?></div>
                     <div class="podium-bar p3-bar">3</div>
                 </div>
             </div>
 
+
+            <?php if (count($top10) > 3): ?>
+            <div style="display:flex; flex-direction:column; gap:6px; margin-bottom:10px;">
+                <?php foreach (array_slice($top10, 3) as $i => $s):
+                    $rank = $i + 4;
+                    $avClass = $av_colors[$rank % count($av_colors)];
+                ?>
+                <div style="display:flex; align-items:center; gap:10px; padding:9px 12px; border-radius:10px; background:var(--bg); border:1px solid var(--border);">
+                    <div style="font-size:12px; font-weight:700; color:var(--muted); min-width:20px; text-align:center;"><?= $rank ?></div>
+                    <div class="modal-rank-avatar <?= $avClass ?>" style="width:32px;height:32px;font-size:11px;flex-shrink:0;"><?= htmlspecialchars(getInitials($s['student_name'])) ?></div>
+                    <div style="flex:1; min-width:0; font-size:12.5px; font-weight:600; color:var(--text); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;"><?= htmlspecialchars(shortName($s['student_name'])) ?></div>
+                    <div style="font-size:12px; font-weight:700; color:var(--navy); flex-shrink:0;"><?= formatDuration($s['total_minutes']) ?></div>
+                </div>
+                <?php endforeach; ?>
+            </div>
+            <?php endif; ?>
             <?php elseif (count($top10) > 0): ?>
             <div style="padding: 10px 0; display: flex; flex-direction: column; gap: 8px;">
                 <?php foreach ($top10 as $i => $s): ?>
@@ -240,7 +269,10 @@ body { font-family: 'DM Sans', sans-serif; background-color: var(--bg); min-heig
                         <div class="modal-rank-name"><?= htmlspecialchars($s['student_name']) ?></div>
                         <div class="modal-rank-id"><?= htmlspecialchars($s['student_id']) ?></div>
                     </div>
-                    <div class="modal-rank-sessions"><span class="num"><?= (int)$s['top_sessions'] ?></span><span class="lbl">sessions</span></div>
+                    <div class="modal-rank-duration">
+                        <span class="num"><?= formatDuration($s['total_minutes']) ?></span>
+                        <span class="lbl">total time</span>
+                    </div>
                 </div>
                 <?php endforeach; ?>
             </div>
@@ -288,7 +320,7 @@ body { font-family: 'DM Sans', sans-serif; background-color: var(--bg); min-heig
                 <div class="modal-header-icon">🏆</div>
                 <div>
                     <h3>Full Leaderboard</h3>
-                    <p>Top 10 students by sessions</p>
+                    <p>Top 10 students by total lab time</p>
                 </div>
             </div>
             <button class="modal-close" onclick="document.getElementById('lbModal').classList.remove('open')">✕</button>
@@ -309,9 +341,9 @@ body { font-family: 'DM Sans', sans-serif; background-color: var(--bg); min-heig
                         <div class="modal-rank-name"><?= htmlspecialchars($s['student_name']) ?></div>
                         <div class="modal-rank-id"><?= htmlspecialchars($s['student_id']) ?></div>
                     </div>
-                    <div class="modal-rank-sessions">
-                        <span class="num"><?= (int)$s['top_sessions'] ?></span>
-                        <span class="lbl">sessions</span>
+                    <div class="modal-rank-duration">
+                        <span class="num"><?= formatDuration($s['total_minutes']) ?></span>
+                        <span class="lbl">total time</span>
                     </div>
                 </div>
                 <?php endforeach; ?>
