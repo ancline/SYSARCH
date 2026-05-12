@@ -518,6 +518,76 @@ $conn->close();
             .nav-title { display: none; }
             .notif-dropdown { width: calc(100vw - 20px); right: -10px; }
         }
+
+        /* ── PROFILE PIC UPLOAD ── */
+.pic-upload-section {
+    display: flex; flex-direction: column; align-items: center;
+    gap: 14px; padding: 28px 0 8px; border-bottom: 1px solid var(--border);
+    margin-bottom: 24px;
+}
+
+.pic-avatar-wrap {
+    position: relative; width: 100px; height: 100px; cursor: pointer;
+}
+
+.pic-avatar-wrap img,
+.pic-avatar-initials {
+    width: 100px; height: 100px; border-radius: 50%;
+    object-fit: cover;
+    border: 3px solid white; outline: 2px solid var(--accent);
+    box-shadow: 0 6px 20px rgba(36,82,160,0.25);
+    display: flex; align-items: center; justify-content: center;
+}
+
+.pic-avatar-initials {
+    background: linear-gradient(135deg, var(--navy-light), var(--accent));
+    font-family: 'DM Serif Display', serif;
+    font-size: 36px; color: white; letter-spacing: 1px;
+}
+
+.pic-avatar-overlay {
+    position: absolute; inset: 0; border-radius: 50%;
+    background: rgba(15,38,83,0.55);
+    display: flex; flex-direction: column; align-items: center;
+    justify-content: center; opacity: 0; transition: opacity 0.2s;
+    color: white; font-size: 11px; font-weight: 700; gap: 4px;
+}
+
+.pic-avatar-wrap:hover .pic-avatar-overlay { opacity: 1; }
+.pic-avatar-overlay .overlay-icon { font-size: 22px; }
+
+.pic-upload-hint {
+    font-size: 12px; color: var(--muted); text-align: center; line-height: 1.5;
+}
+
+.pic-upload-actions { display: flex; gap: 8px; }
+
+.btn-pick-photo {
+    padding: 7px 16px; border-radius: 8px;
+    background: var(--tag-bg); border: 1px solid var(--border);
+    color: var(--navy); font-size: 12.5px; font-weight: 700;
+    font-family: 'DM Sans', sans-serif; cursor: pointer;
+    transition: background 0.15s, border-color 0.15s;
+}
+.btn-pick-photo:hover { background: #dce8ff; border-color: var(--accent); }
+
+.btn-upload-photo {
+    padding: 7px 16px; border-radius: 8px;
+    background: linear-gradient(135deg, var(--navy), var(--accent));
+    border: none; color: white; font-size: 12.5px; font-weight: 700;
+    font-family: 'DM Sans', sans-serif; cursor: pointer;
+    box-shadow: 0 2px 8px rgba(36,82,160,0.3);
+    transition: opacity 0.15s, transform 0.15s; display: none;
+}
+.btn-upload-photo:hover { opacity: 0.88; transform: translateY(-1px); }
+.btn-upload-photo.visible { display: inline-flex; align-items: center; gap: 6px; }
+
+.pic-upload-status {
+    font-size: 12px; font-weight: 600; min-height: 18px; text-align: center;
+}
+.pic-upload-status.success { color: #0a7a52; }
+.pic-upload-status.error   { color: var(--red, #e53535); }
+
     </style>
 </head>
 <body>
@@ -587,6 +657,39 @@ $conn->close();
         </div>
 
         <div class="card-body">
+            <?php
+        $pic_path = $_SESSION['profile_pic'] ?? null;
+        if (!$pic_path) {
+            // Try loading from DB
+            $conn2 = new mysqli('localhost', 'root', '', 'students');
+            $pr = $conn2->query("SELECT profile_pic FROM student WHERE IdNumber='" . $conn2->real_escape_string($user['IdNumber']) . "'")->fetch_assoc();
+            $pic_path = $pr['profile_pic'] ?? null;
+            $conn2->close();
+        }
+        $name_parts = explode(' ', trim($user['FirstName'] . ' ' . $user['LastName']));
+        $initials = strtoupper(substr($name_parts[0],0,1) . (count($name_parts)>1 ? substr($name_parts[count($name_parts)-1],0,1) : ''));
+    ?>
+    <div class="pic-upload-section">
+        <div class="pic-avatar-wrap" onclick="document.getElementById('picFileInput').click()">
+            <?php if ($pic_path): ?>
+            <img id="picPreview" src="/SYSARCH/user/<?= htmlspecialchars($pic_path) ?>?v=<?= time() ?>" alt="Profile">
+            <?php else: ?>
+            <div class="pic-avatar-initials" id="picInitials"><?= htmlspecialchars($initials) ?></div>
+            <img id="picPreview" src="" alt="Profile" style="display:none;position:absolute;inset:0;border-radius:50%;width:100%;height:100%;object-fit:cover;border:3px solid white;outline:2px solid var(--accent);">
+            <?php endif; ?>
+            <div class="pic-avatar-overlay">
+                <span class="overlay-icon">📷</span>
+                <span>Change Photo</span>
+            </div>
+        </div>
+        <div class="pic-upload-hint">JPG, PNG, GIF or WEBP · Max 3MB<br>Click the avatar to choose a photo</div>
+        <div class="pic-upload-actions">
+            <button type="button" class="btn-pick-photo" onclick="document.getElementById('picFileInput').click()">📁 Choose Photo</button>
+            <button type="button" class="btn-upload-photo" id="btnUploadPhoto" onclick="uploadPhoto()">⬆️ Upload</button>
+        </div>
+        <div class="pic-upload-status" id="picUploadStatus"></div>
+        <input type="file" id="picFileInput" accept="image/jpeg,image/png,image/gif,image/webp" style="display:none" onchange="onPhotoChosen(this)">
+    </div>
             <form action="user_update_profile.php" method="POST" id="profileForm">
 
                 <?php
@@ -888,6 +991,72 @@ function timeAgo(dt) {
 function esc(s) {
     return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
+
+// ── PROFILE PIC UPLOAD ────────────────────────────────────────────
+function onPhotoChosen(input) {
+    if (!input.files || !input.files[0]) return;
+    const file = input.files[0];
+    const maxMB = 3;
+    if (file.size > maxMB * 1024 * 1024) {
+        setPickStatus('error', '⚠️ File too large. Max 3MB.');
+        input.value = '';
+        return;
+    }
+    const reader = new FileReader();
+    reader.onload = function(e) {
+        const preview = document.getElementById('picPreview');
+        const initials = document.getElementById('picInitials');
+        preview.src = e.target.result;
+        preview.style.display = 'block';
+        if (initials) initials.style.display = 'none';
+        document.getElementById('btnUploadPhoto').classList.add('visible');
+        setPickStatus('', '');
+    };
+    reader.readAsDataURL(file);
+}
+
+function uploadPhoto() {
+    const input = document.getElementById('picFileInput');
+    if (!input.files || !input.files[0]) {
+        setPickStatus('error', '⚠️ Please choose a photo first.');
+        return;
+    }
+    const btn = document.getElementById('btnUploadPhoto');
+    btn.textContent = '⏳ Uploading…';
+    btn.disabled = true;
+
+    const fd = new FormData();
+    fd.append('profile_pic', input.files[0]);
+
+    fetch('/SYSARCH/user/upload_profile_pic.php', { method: 'POST', body: fd })
+        .then(r => r.json())
+        .then(data => {
+            btn.disabled = false;
+            btn.innerHTML = '⬆️ Upload';
+            if (data.success) {
+                setPickStatus('success', '✅ Photo updated successfully!');
+                btn.classList.remove('visible');
+                input.value = '';
+                // Refresh preview with cache-busted URL
+                const preview = document.getElementById('picPreview');
+                preview.src = data.path + '?v=' + Date.now();
+            } else {
+                setPickStatus('error', '❌ ' + (data.error || 'Upload failed.'));
+            }
+        })
+        .catch(() => {
+            btn.disabled = false;
+            btn.innerHTML = '⬆️ Upload';
+            setPickStatus('error', '❌ Network error. Please try again.');
+        });
+}
+
+function setPickStatus(type, msg) {
+    const el = document.getElementById('picUploadStatus');
+    el.className = 'pic-upload-status' + (type ? ' ' + type : '');
+    el.textContent = msg;
+}
+
 </script>
 
 </body>

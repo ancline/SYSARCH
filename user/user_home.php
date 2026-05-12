@@ -18,13 +18,14 @@ if ($conn->connect_error) {
 
 // Fetch sessions remaining from student table
 $sessions_remaining = 0;
-$stmt = $conn->prepare("SELECT sessions FROM student WHERE IdNumber = ?");
+$stmt = $conn->prepare("SELECT sessions, profile_pic FROM student WHERE IdNumber = ?");
 $stmt->bind_param('s', $_SESSION['student_id']);
 $stmt->execute();
 $row = $stmt->get_result()->fetch_assoc();
 if ($row) {
     $sessions_remaining = (int)$row['sessions'];
     $_SESSION['sessions_remaining'] = $sessions_remaining;
+     $_SESSION['profile_pic'] = $row['profile_pic'] ?? null;
 }
 $stmt->close();
 
@@ -467,7 +468,13 @@ $conn->close();
                 );
             ?>
             <div class="student-avatar-area">
-                <div class="avatar-initials"><?= htmlspecialchars($initials) ?></div>
+                <?php if (!empty($_SESSION['profile_pic'])): ?>
+<img src="/SYSARCH/user/<?= htmlspecialchars($_SESSION['profile_pic']) ?>?v=<?= time() ?>"
+     style="width:80px;height:80px;border-radius:50%;object-fit:cover;border:3px solid white;outline:2px solid var(--accent);box-shadow:0 6px 20px rgba(36,82,160,0.35);"
+     alt="Profile Photo">
+<?php else: ?>
+<div class="avatar-initials"><?= htmlspecialchars($initials) ?></div>
+<?php endif; ?>
                 <div class="student-name-display">
                     <div class="sname"><?= htmlspecialchars($name) ?></div>
                     <div class="sid"><?= htmlspecialchars($_SESSION['student_id'] ?? '') ?></div>
