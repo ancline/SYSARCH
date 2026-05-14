@@ -294,7 +294,15 @@ $conn->close();
         .points-banner .pb-sub  { font-size: 10px; color: rgba(255,220,120,0.8); margin-top: 3px; font-weight: 600; }
 
         /* ── ANNOUNCEMENTS ── */
-        .ann-body { padding: 18px; display: flex; flex-direction: column; gap: 14px; max-height: 560px; overflow-y: auto; }
+        .ann-body {
+            padding: 18px;
+            display: flex;
+            flex-direction: column;
+            gap: 14px;
+            flex: 1;
+            overflow-y: auto;
+            max-height: unset;
+        }
         .ann-body::-webkit-scrollbar { width: 5px; }
         .ann-body::-webkit-scrollbar-track { background: transparent; }
         .ann-body::-webkit-scrollbar-thumb { background: var(--border); border-radius: 10px; }
@@ -308,7 +316,12 @@ $conn->close();
         .ann-empty     { padding: 12px 14px; font-size: 12px; color: var(--muted); font-style: italic; }
 
         /* ── RULES ── */
-        .rules-body { padding: 24px 22px; max-height: 640px; overflow-y: auto; }
+        .rules-body {
+            padding: 24px 22px;
+            flex: 1;
+            overflow-y: auto;
+            max-height: unset;
+        }
         .rules-body::-webkit-scrollbar { width: 5px; }
         .rules-body::-webkit-scrollbar-track { background: transparent; }
         .rules-body::-webkit-scrollbar-thumb { background: var(--border); border-radius: 10px; }
@@ -403,6 +416,15 @@ $conn->close();
             .notif-dropdown { width: calc(100vw - 20px); right: -10px; }
             .stat-grid { grid-template-columns: 1fr 1fr; }
         }
+
+        .dashboard > .card:nth-child(1),
+        .dashboard > .card:nth-child(2),
+        .dashboard > .card:nth-child(3) {
+            height: 620px;
+            display: flex;
+            flex-direction: column;
+        }
+
     </style>
 </head>
 <body>
