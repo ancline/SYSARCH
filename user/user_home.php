@@ -241,7 +241,13 @@ $conn->close();
 
         /* ── LAYOUT ── */
         .dashboard { display: grid; grid-template-columns: 340px 1fr 380px; gap: 20px; padding: 24px 28px; align-items: start; }
-        .bottom-row { grid-column: 1 / -1; display: grid; grid-template-columns: 1fr 2fr; gap: 20px; align-items: start; }
+        .bottom-row { 
+    grid-column: 1 / -1; 
+    display: grid; 
+    grid-template-columns: 1fr 2fr; 
+    gap: 20px; 
+    align-items: start; 
+}
 
         /* ── CARD BASE ── */
         .card { background: var(--panel); border-radius: 16px; overflow: hidden; box-shadow: 0 4px 24px rgba(15,38,83,0.08); border: 1px solid var(--border); animation: fadeUp 0.5s ease both; }
@@ -424,6 +430,28 @@ $conn->close();
             display: flex;
             flex-direction: column;
         }
+
+        /* ── LAB SOFTWARE CARD (student) ── */
+.labsw-body { padding: 20px; }
+.labsw-select-row { display: flex; gap: 10px; align-items: center; margin-bottom: 18px; }
+.labsw-select {
+    flex: 1; padding: 9px 13px; border: 1.5px solid var(--border); border-radius: 9px;
+    font-size: 13px; font-family: 'DM Sans', sans-serif; color: var(--text);
+    background: white; outline: none; transition: border-color 0.18s, box-shadow 0.18s;
+}
+.labsw-select:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(59,111,212,0.1); }
+.labsw-chips { display: flex; flex-wrap: wrap; gap: 9px; min-height: 40px; }
+.labsw-chip {
+    display: inline-flex; align-items: center; gap: 7px;
+    background: var(--tag-bg); border: 1px solid var(--border);
+    border-radius: 20px; padding: 6px 14px;
+    font-size: 12.5px; font-weight: 600; color: var(--navy);
+    transition: background 0.15s, box-shadow 0.15s;
+}
+.labsw-chip:hover { background: #dce5f5; box-shadow: 0 2px 8px rgba(36,82,160,0.1); }
+.labsw-chip .chip-icon { font-size: 14px; }
+.labsw-empty { font-size: 12.5px; color: var(--muted); font-style: italic; }
+.labsw-loading { font-size: 12.5px; color: var(--muted); }
 
     </style>
 </head>
@@ -771,9 +799,31 @@ $conn->close();
                         </tbody>
                     </table>
                     <?php endif; ?>
+
+                    
+                </div>
+            </div>
+
+         <div class="card" style="grid-column: 1 / -1; margin-top: 4px; animation-delay:0.35s;">
+            <div class="card-header">
+                <div class="hicon">🖥️</div>
+                Available Lab Software
+            </div>
+            <div class="labsw-body">
+                <div class="labsw-select-row">
+                    <select class="labsw-select" id="labSwSelect" onchange="loadLabSoftware()">
+                        <option value="">— Select a lab to view available software —</option>
+                    </select>
+                </div>
+                <div class="labsw-chips" id="labSwChips">
+                    <div class="labsw-empty">Select a lab above to see its available software.</div>
                 </div>
             </div>
         </div>
+
+        </div>
+
+
 
     </div><!-- /bottom-row -->
 </div><!-- /dashboard -->
@@ -864,6 +914,57 @@ function filterSessions() {
         row.style.display = row.textContent.toLowerCase().includes(q) ? '' : 'none';
     });
 }
+// ── LAB SOFTWARE (student view) ─────────────────────────────────────────────
+let labList = [];
+
+function initLabSoftware() {
+    fetch('/SYSARCH/user/get_lab_software.php')
+        .then(r => r.json())
+        .then(data => {
+            labList = data.labs || [];
+            const sel = document.getElementById('labSwSelect');
+            sel.innerHTML = '<option value="">— Select a lab to view available software —</option>';
+            labList.forEach(lab => {
+                const opt = document.createElement('option');
+                opt.value = lab;
+                opt.textContent = lab;
+                sel.appendChild(opt);
+            });
+        })
+        .catch(() => {
+            document.getElementById('labSwChips').innerHTML =
+                '<div class="labsw-empty">Could not load lab data.</div>';
+        });
+}
+
+function loadLabSoftware() {
+    const lab   = document.getElementById('labSwSelect').value;
+    const chips = document.getElementById('labSwChips');
+    if (!lab) {
+        chips.innerHTML = '<div class="labsw-empty">Select a lab above to see its available software.</div>';
+        return;
+    }
+    chips.innerHTML = '<div class="labsw-loading">Loading…</div>';
+    fetch('/SYSARCH/user/get_lab_software.php?lab=' + encodeURIComponent(lab))
+        .then(r => r.json())
+        .then(data => {
+            const items = data.software || [];
+            if (items.length === 0) {
+                chips.innerHTML = '<div class="labsw-empty">No software listed for this lab yet.</div>';
+                return;
+            }
+            chips.innerHTML = items.map(name =>
+                `<div class="labsw-chip"><span class="chip-icon">💿</span>${esc(name)}</div>`
+            ).join('');
+        })
+        .catch(() => {
+            chips.innerHTML = '<div class="labsw-empty">Failed to load software.</div>';
+        });
+}
+
+initLabSoftware();
+
+
 </script>
 </body>
 </html>

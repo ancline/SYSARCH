@@ -475,6 +475,53 @@ $conn->close();
             font-size: 13px;
         }
 
+        /* ── LAB SOFTWARE PANEL ── */
+.lab-panel { margin-top: 24px; }
+.lab-sw-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; align-items: start; }
+.lab-select-row { display: flex; gap: 10px; margin-bottom: 14px; align-items: center; flex-wrap: wrap; }
+.lab-select {
+    flex: 1; padding: 8px 12px; border: 1.5px solid var(--border); border-radius: 8px;
+    font-size: 13px; font-family: 'DM Sans', sans-serif; color: var(--text);
+    background: white; outline: none; min-width: 120px;
+    transition: border-color 0.18s;
+}
+.lab-select:focus { border-color: var(--accent); }
+.lab-input {
+    flex: 1; padding: 8px 12px; border: 1.5px solid var(--border); border-radius: 8px;
+    font-size: 13px; font-family: 'DM Sans', sans-serif; color: var(--text);
+    background: white; outline: none; min-width: 140px;
+    transition: border-color 0.18s, box-shadow 0.18s;
+}
+.lab-input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(59,111,212,0.1); }
+.btn-add-soft {
+    padding: 8px 18px; background: linear-gradient(135deg, var(--navy), var(--accent));
+    color: white; border: none; border-radius: 8px; font-size: 13px; font-weight: 700;
+    font-family: 'DM Sans', sans-serif; cursor: pointer; white-space: nowrap;
+    box-shadow: 0 2px 8px rgba(36,82,160,0.3); transition: transform 0.15s, box-shadow 0.15s;
+}
+.btn-add-soft:hover { transform: translateY(-1px); box-shadow: 0 4px 14px rgba(36,82,160,0.4); }
+.software-chips { display: flex; flex-wrap: wrap; gap: 8px; min-height: 48px; }
+.soft-chip {
+    display: inline-flex; align-items: center; gap: 7px;
+    background: var(--tag-bg); border: 1px solid var(--border);
+    border-radius: 20px; padding: 5px 12px 5px 14px;
+    font-size: 12.5px; font-weight: 600; color: var(--navy);
+}
+.soft-chip-del {
+    width: 18px; height: 18px; border-radius: 50%; background: #fde8e8;
+    border: none; cursor: pointer; font-size: 12px; color: #c0392b;
+    display: flex; align-items: center; justify-content: center;
+    transition: background 0.15s; line-height: 1; padding: 0;
+    font-family: monospace;
+}
+.soft-chip-del:hover { background: #fca5a5; }
+.soft-empty { font-size: 12.5px; color: var(--muted); font-style: italic; padding: 4px 0; }
+.lab-col-title { font-size: 11px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 10px; }
+.lab-sw-status { font-size: 12px; color: var(--muted); margin-top: 6px; min-height: 18px; }
+.lab-sw-status.ok  { color: #1a7a4a; }
+.lab-sw-status.err { color: #c0392b; }
+.new-lab-row { display: flex; gap: 10px; margin-bottom: 14px; }
+
         @media (max-width: 900px) {
             .grid { grid-template-columns: 1fr; }
             .stat-strip { grid-template-columns: 1fr; }
@@ -604,6 +651,51 @@ $conn->close();
         </div>
 
     </div>
+
+    <!-- LAB SOFTWARE PANEL -->
+<div class="lab-panel">
+    <div class="card">
+        <div class="card-header">
+            <div class="hicon">🖥️</div>
+            Lab Software Configuration
+        </div>
+        <div class="card-body">
+            <div class="lab-sw-grid">
+
+                <!-- LEFT: Select lab + add software -->
+                <div>
+                    <div class="lab-col-title">Select Lab</div>
+                    <div class="lab-select-row">
+                        <select class="lab-select" id="adminLabSelect" onchange="adminLoadSoftware()">
+                            <option value="">— choose a lab —</option>
+                        </select>
+                    </div>
+                    <div class="lab-col-title" style="margin-top:10px;">Or Add a New Lab</div>
+                    <div class="new-lab-row">
+                        <input type="text" class="lab-input" id="newLabName" placeholder="e.g. Lab 5">
+                        <button class="btn-add-soft" onclick="adminAddLab()">+ Add Lab</button>
+                    </div>
+                    <div class="lab-col-title" style="margin-top:6px;">Add Software to Selected Lab</div>
+                    <div class="lab-select-row">
+                        <input type="text" class="lab-input" id="newSoftName" placeholder="e.g. Microsoft Word" onkeydown="if(event.key==='Enter')adminAddSoftware()">
+                        <button class="btn-add-soft" onclick="adminAddSoftware()">+ Add</button>
+                    </div>
+                    <div class="lab-sw-status" id="labSwStatus"></div>
+                </div>
+
+                <!-- RIGHT: Current software chips -->
+                <div>
+                    <div class="lab-col-title">Software in <span id="adminLabLabel">—</span></div>
+                    <div class="software-chips" id="adminSoftwareChips">
+                        <div class="soft-empty">Select a lab to view its software.</div>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+    </div>
+</div>
+    
 </div>
 
 <script>
@@ -653,6 +745,149 @@ $conn->close();
             cutout: '60%'
         }
     });
+
+    // ── LAB SOFTWARE ADMIN ───────────────────────────────────────────────────────
+let adminLabData = {};   // { lab_name: [{id, name}, ...] }
+let adminLabList = [];   // [lab_name, ...]
+
+function adminFetchAll() {
+    fetch('/SYSARCH/admin/manage_lab_software.php?action=list')
+        .then(r => r.json())
+        .then(data => {
+            adminLabList = data.labs || [];
+            adminLabData = data.software || {};
+            const sel = document.getElementById('adminLabSelect');
+            const cur = sel.value;
+            sel.innerHTML = '<option value="">— choose a lab —</option>';
+            adminLabList.forEach(lab => {
+                const opt = document.createElement('option');
+                opt.value = lab; opt.textContent = lab;
+                if (lab === cur) opt.selected = true;
+                sel.appendChild(opt);
+            });
+            if (cur) adminRenderChips(cur);
+        })
+        .catch(() => setLabStatus('Could not load lab data.', 'err'));
+}
+
+function adminLoadSoftware() {
+    const lab = document.getElementById('adminLabSelect').value;
+    document.getElementById('adminLabLabel').textContent = lab || '—';
+    adminRenderChips(lab);
+    document.getElementById('labSwStatus').textContent = '';
+}
+
+function adminRenderChips(lab) {
+    const wrap = document.getElementById('adminSoftwareChips');
+    const items = adminLabData[lab] || [];
+    if (!lab || items.length === 0) {
+        wrap.innerHTML = '<div class="soft-empty">' + (lab ? 'No software added yet.' : 'Select a lab to view its software.') + '</div>';
+        return;
+    }
+    wrap.innerHTML = items.map(s =>
+        `<div class="soft-chip" id="chip-${s.id}">
+            ${escHtml(s.name)}
+            <button class="soft-chip-del" onclick="adminDeleteSoftware(${s.id},'${escHtml(lab)}')" title="Remove">✕</button>
+        </div>`
+    ).join('');
+}
+
+function adminAddLab() {
+    const name = document.getElementById('newLabName').value.trim();
+    if (!name) { setLabStatus('Enter a lab name.', 'err'); return; }
+    if (adminLabList.includes(name)) { setLabStatus('Lab already exists.', 'err'); return; }
+
+    const fd = new FormData();
+    fd.append('action', 'add_lab');
+    fd.append('lab_name', name);
+
+    fetch('/SYSARCH/admin/manage_lab_software.php', { method: 'POST', body: fd })
+        .then(r => r.json())
+        .then(data => {
+            if (data.error) { setLabStatus(data.error, 'err'); return; }
+
+            // Optimistically update local state (same as before)
+            adminLabList.push(name);
+            adminLabList.sort();
+            adminLabData[name] = adminLabData[name] || [];
+
+            const sel = document.getElementById('adminLabSelect');
+            sel.innerHTML = '<option value="">— choose a lab —</option>';
+            adminLabList.forEach(lab => {
+                const opt = document.createElement('option');
+                opt.value = lab; opt.textContent = lab;
+                if (lab === name) opt.selected = true;
+                sel.appendChild(opt);
+            });
+
+            document.getElementById('newLabName').value = '';
+            document.getElementById('adminLabLabel').textContent = name;
+            adminRenderChips(name);
+            setLabStatus('Lab "' + name + '" added. Now add software to it.', 'ok');
+        })
+        .catch(() => setLabStatus('Failed to add lab.', 'err'));
+}
+
+function adminAddSoftware() {
+    const lab  = document.getElementById('adminLabSelect').value;
+    const soft = document.getElementById('newSoftName').value.trim();
+    if (!lab)  { setLabStatus('Please select a lab first.', 'err'); return; }
+    if (!soft) { setLabStatus('Enter a software name.', 'err'); return; }
+
+    const fd = new FormData();
+    fd.append('action', 'add');
+    fd.append('lab_name', lab);
+    fd.append('software_name', soft);
+
+    fetch('/SYSARCH/admin/manage_lab_software.php', { method: 'POST', body: fd })
+        .then(r => r.json())
+        .then(data => {
+            if (data.error) { setLabStatus(data.error, 'err'); return; }
+            if (!adminLabData[lab]) adminLabData[lab] = [];
+            // avoid duplicate in local state
+            if (!adminLabData[lab].find(x => x.name === soft)) {
+                adminLabData[lab].push({ id: data.id, name: soft });
+                adminLabData[lab].sort((a,b) => a.name.localeCompare(b.name));
+            }
+            document.getElementById('newSoftName').value = '';
+            adminRenderChips(lab);
+            setLabStatus('"' + soft + '" added.', 'ok');
+        })
+        .catch(() => setLabStatus('Failed to add software.', 'err'));
+}
+
+function adminDeleteSoftware(id, lab) {
+    const fd = new FormData();
+    fd.append('action', 'delete');
+    fd.append('id', id);
+    fetch('/SYSARCH/admin/manage_lab_software.php', { method: 'POST', body: fd })
+        .then(r => r.json())
+        .then(data => {
+            if (data.error) { setLabStatus(data.error, 'err'); return; }
+            if (adminLabData[lab]) {
+                adminLabData[lab] = adminLabData[lab].filter(x => x.id != id);
+            }
+            const chip = document.getElementById('chip-' + id);
+            if (chip) chip.remove();
+            if ((adminLabData[lab] || []).length === 0) adminRenderChips(lab);
+            setLabStatus('Removed.', 'ok');
+        })
+        .catch(() => setLabStatus('Failed to remove.', 'err'));
+}
+
+function setLabStatus(msg, type) {
+    const el = document.getElementById('labSwStatus');
+    el.textContent = msg; el.className = 'lab-sw-status ' + (type || '');
+    setTimeout(() => { el.textContent = ''; el.className = 'lab-sw-status'; }, 3000);
+}
+
+function escHtml(s) {
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+adminFetchAll();
+    
+
 </script>
 
 </body>
