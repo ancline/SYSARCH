@@ -278,7 +278,25 @@ $conn->close();
             display: grid;
             grid-template-columns: 1fr 1fr;
             gap: 20px;
-            align-items: start;
+            align-items: stretch;
+        }
+
+        /* Right column announcement card fills full height */
+        .grid > .card {
+            display: flex;
+            flex-direction: column;
+            height: 100%;
+        }
+
+        .grid > .card > .card-body {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .grid > .card > .card-body .ann-list {
+            flex: 1;
+            max-height: none;
         }
 
         /* ── CARD ── */
@@ -476,57 +494,57 @@ $conn->close();
         }
 
         /* ── LAB SOFTWARE PANEL ── */
-.lab-panel { margin-top: 24px; }
-.lab-sw-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; align-items: start; }
-.lab-select-row { display: flex; gap: 10px; margin-bottom: 14px; align-items: center; flex-wrap: wrap; }
-.lab-select {
-    flex: 1; padding: 8px 12px; border: 1.5px solid var(--border); border-radius: 8px;
-    font-size: 13px; font-family: 'DM Sans', sans-serif; color: var(--text);
-    background: white; outline: none; min-width: 120px;
-    transition: border-color 0.18s;
-}
-.lab-select:focus { border-color: var(--accent); }
-.lab-input {
-    flex: 1; padding: 8px 12px; border: 1.5px solid var(--border); border-radius: 8px;
-    font-size: 13px; font-family: 'DM Sans', sans-serif; color: var(--text);
-    background: white; outline: none; min-width: 140px;
-    transition: border-color 0.18s, box-shadow 0.18s;
-}
-.lab-input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(59,111,212,0.1); }
-.btn-add-soft {
-    padding: 8px 18px; background: linear-gradient(135deg, var(--navy), var(--accent));
-    color: white; border: none; border-radius: 8px; font-size: 13px; font-weight: 700;
-    font-family: 'DM Sans', sans-serif; cursor: pointer; white-space: nowrap;
-    box-shadow: 0 2px 8px rgba(36,82,160,0.3); transition: transform 0.15s, box-shadow 0.15s;
-}
-.btn-add-soft:hover { transform: translateY(-1px); box-shadow: 0 4px 14px rgba(36,82,160,0.4); }
-.software-chips { display: flex; flex-wrap: wrap; gap: 8px; min-height: 48px; }
-.soft-chip {
-    display: inline-flex; align-items: center; gap: 7px;
-    background: var(--tag-bg); border: 1px solid var(--border);
-    border-radius: 20px; padding: 5px 12px 5px 14px;
-    font-size: 12.5px; font-weight: 600; color: var(--navy);
-}
-.soft-chip-del {
-    width: 18px; height: 18px; border-radius: 50%; background: #fde8e8;
-    border: none; cursor: pointer; font-size: 12px; color: #c0392b;
-    display: flex; align-items: center; justify-content: center;
-    transition: background 0.15s; line-height: 1; padding: 0;
-    font-family: monospace;
-}
-.soft-chip-del:hover { background: #fca5a5; }
-.soft-empty { font-size: 12.5px; color: var(--muted); font-style: italic; padding: 4px 0; }
-.lab-col-title { font-size: 11px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 10px; }
-.lab-sw-status { font-size: 12px; color: var(--muted); margin-top: 6px; min-height: 18px; }
-.lab-sw-status.ok  { color: #1a7a4a; }
-.lab-sw-status.err { color: #c0392b; }
-.new-lab-row { display: flex; gap: 10px; margin-bottom: 14px; }
+        .lab-sw-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; align-items: start; }
+        .lab-select-row { display: flex; gap: 10px; margin-bottom: 14px; align-items: center; flex-wrap: wrap; }
+        .lab-select {
+            flex: 1; padding: 8px 12px; border: 1.5px solid var(--border); border-radius: 8px;
+            font-size: 13px; font-family: 'DM Sans', sans-serif; color: var(--text);
+            background: white; outline: none; min-width: 120px;
+            transition: border-color 0.18s;
+        }
+        .lab-select:focus { border-color: var(--accent); }
+        .lab-input {
+            flex: 1; padding: 8px 12px; border: 1.5px solid var(--border); border-radius: 8px;
+            font-size: 13px; font-family: 'DM Sans', sans-serif; color: var(--text);
+            background: white; outline: none; min-width: 140px;
+            transition: border-color 0.18s, box-shadow 0.18s;
+        }
+        .lab-input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(59,111,212,0.1); }
+        .btn-add-soft {
+            padding: 8px 18px; background: linear-gradient(135deg, var(--navy), var(--accent));
+            color: white; border: none; border-radius: 8px; font-size: 13px; font-weight: 700;
+            font-family: 'DM Sans', sans-serif; cursor: pointer; white-space: nowrap;
+            box-shadow: 0 2px 8px rgba(36,82,160,0.3); transition: transform 0.15s, box-shadow 0.15s;
+        }
+        .btn-add-soft:hover { transform: translateY(-1px); box-shadow: 0 4px 14px rgba(36,82,160,0.4); }
+        .software-chips { display: flex; flex-wrap: wrap; gap: 8px; min-height: 48px; }
+        .soft-chip {
+            display: inline-flex; align-items: center; gap: 7px;
+            background: var(--tag-bg); border: 1px solid var(--border);
+            border-radius: 20px; padding: 5px 12px 5px 14px;
+            font-size: 12.5px; font-weight: 600; color: var(--navy);
+        }
+        .soft-chip-del {
+            width: 18px; height: 18px; border-radius: 50%; background: #fde8e8;
+            border: none; cursor: pointer; font-size: 12px; color: #c0392b;
+            display: flex; align-items: center; justify-content: center;
+            transition: background 0.15s; line-height: 1; padding: 0;
+            font-family: monospace;
+        }
+        .soft-chip-del:hover { background: #fca5a5; }
+        .soft-empty { font-size: 12.5px; color: var(--muted); font-style: italic; padding: 4px 0; }
+        .lab-col-title { font-size: 11px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 10px; }
+        .lab-sw-status { font-size: 12px; color: var(--muted); margin-top: 6px; min-height: 18px; }
+        .lab-sw-status.ok  { color: #1a7a4a; }
+        .lab-sw-status.err { color: #c0392b; }
+        .new-lab-row { display: flex; gap: 10px; margin-bottom: 14px; }
 
         @media (max-width: 900px) {
             .grid { grid-template-columns: 1fr; }
             .stat-strip { grid-template-columns: 1fr; }
             .nav-title { display: none; }
             .page-wrapper { padding: 20px 16px 40px; }
+            .lab-sw-grid { grid-template-columns: 1fr; }
         }
     </style>
 </head>
@@ -588,17 +606,64 @@ $conn->close();
     <!-- GRID -->
     <div class="grid">
 
-        <!-- LEFT: CHART -->
-        <div class="card">
-            <div class="card-header">
-                <div class="hicon">📊</div>
-                Statistics
-            </div>
-            <div class="card-body">
-                <div class="chart-wrap">
-                    <canvas id="statsChart"></canvas>
+        <!-- LEFT COLUMN: Statistics + Lab Software stacked -->
+        <div style="display:flex; flex-direction:column; gap:20px;">
+
+            <!-- CHART -->
+            <div class="card">
+                <div class="card-header">
+                    <div class="hicon">📊</div>
+                    Statistics
+                </div>
+                <div class="card-body">
+                    <div class="chart-wrap">
+                        <canvas id="statsChart"></canvas>
+                    </div>
                 </div>
             </div>
+
+            <!-- LAB SOFTWARE -->
+            <div class="card">
+                <div class="card-header">
+                    <div class="hicon">🖥️</div>
+                    Lab Software Configuration
+                </div>
+                <div class="card-body">
+                    <div class="lab-sw-grid">
+
+                        <!-- LEFT: Select lab + add software -->
+                        <div>
+                            <div class="lab-col-title">Select Lab</div>
+                            <div class="lab-select-row">
+                                <select class="lab-select" id="adminLabSelect" onchange="adminLoadSoftware()">
+                                    <option value="">— choose a lab —</option>
+                                </select>
+                            </div>
+                            <div class="lab-col-title" style="margin-top:10px;">Or Add a New Lab</div>
+                            <div class="new-lab-row">
+                                <input type="text" class="lab-input" id="newLabName" placeholder="e.g. Lab 5">
+                                <button class="btn-add-soft" onclick="adminAddLab()">+ Add Lab</button>
+                            </div>
+                            <div class="lab-col-title" style="margin-top:6px;">Add Software to Selected Lab</div>
+                            <div class="lab-select-row">
+                                <input type="text" class="lab-input" id="newSoftName" placeholder="e.g. Microsoft Word" onkeydown="if(event.key==='Enter')adminAddSoftware()">
+                                <button class="btn-add-soft" onclick="adminAddSoftware()">+ Add</button>
+                            </div>
+                            <div class="lab-sw-status" id="labSwStatus"></div>
+                        </div>
+
+                        <!-- RIGHT: Current software chips -->
+                        <div>
+                            <div class="lab-col-title">Software in <span id="adminLabLabel">—</span></div>
+                            <div class="software-chips" id="adminSoftwareChips">
+                                <div class="soft-empty">Select a lab to view its software.</div>
+                            </div>
+                        </div>
+
+                    </div>
+                </div>
+            </div>
+
         </div>
 
         <!-- RIGHT: ANNOUNCEMENTS -->
@@ -652,50 +717,6 @@ $conn->close();
 
     </div>
 
-    <!-- LAB SOFTWARE PANEL -->
-<div class="lab-panel">
-    <div class="card">
-        <div class="card-header">
-            <div class="hicon">🖥️</div>
-            Lab Software Configuration
-        </div>
-        <div class="card-body">
-            <div class="lab-sw-grid">
-
-                <!-- LEFT: Select lab + add software -->
-                <div>
-                    <div class="lab-col-title">Select Lab</div>
-                    <div class="lab-select-row">
-                        <select class="lab-select" id="adminLabSelect" onchange="adminLoadSoftware()">
-                            <option value="">— choose a lab —</option>
-                        </select>
-                    </div>
-                    <div class="lab-col-title" style="margin-top:10px;">Or Add a New Lab</div>
-                    <div class="new-lab-row">
-                        <input type="text" class="lab-input" id="newLabName" placeholder="e.g. Lab 5">
-                        <button class="btn-add-soft" onclick="adminAddLab()">+ Add Lab</button>
-                    </div>
-                    <div class="lab-col-title" style="margin-top:6px;">Add Software to Selected Lab</div>
-                    <div class="lab-select-row">
-                        <input type="text" class="lab-input" id="newSoftName" placeholder="e.g. Microsoft Word" onkeydown="if(event.key==='Enter')adminAddSoftware()">
-                        <button class="btn-add-soft" onclick="adminAddSoftware()">+ Add</button>
-                    </div>
-                    <div class="lab-sw-status" id="labSwStatus"></div>
-                </div>
-
-                <!-- RIGHT: Current software chips -->
-                <div>
-                    <div class="lab-col-title">Software in <span id="adminLabLabel">—</span></div>
-                    <div class="software-chips" id="adminSoftwareChips">
-                        <div class="soft-empty">Select a lab to view its software.</div>
-                    </div>
-                </div>
-
-            </div>
-        </div>
-    </div>
-</div>
-    
 </div>
 
 <script>
@@ -806,7 +827,6 @@ function adminAddLab() {
         .then(data => {
             if (data.error) { setLabStatus(data.error, 'err'); return; }
 
-            // Optimistically update local state (same as before)
             adminLabList.push(name);
             adminLabList.sort();
             adminLabData[name] = adminLabData[name] || [];
@@ -844,7 +864,6 @@ function adminAddSoftware() {
         .then(data => {
             if (data.error) { setLabStatus(data.error, 'err'); return; }
             if (!adminLabData[lab]) adminLabData[lab] = [];
-            // avoid duplicate in local state
             if (!adminLabData[lab].find(x => x.name === soft)) {
                 adminLabData[lab].push({ id: data.id, name: soft });
                 adminLabData[lab].sort((a,b) => a.name.localeCompare(b.name));
@@ -886,8 +905,6 @@ function escHtml(s) {
 }
 
 adminFetchAll();
-    
-
 </script>
 
 </body>
