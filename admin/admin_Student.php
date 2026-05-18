@@ -92,24 +92,20 @@ if (
     $sessions    = intval($_POST['sessions']  ?? 30);
     $raw_pass    = trim($_POST['password']    ?? '');
 
-    // Validate required fields
     if (!$id || !$last_name || !$first_name || !$raw_pass) {
         echo json_encode(['success' => false, 'message' => 'ID, Last Name, First Name, and Password are required.']);
         $conn->close();
         exit();
     }
 
-    // Minimum password length
     if (strlen($raw_pass) < 6) {
         echo json_encode(['success' => false, 'message' => 'Password must be at least 6 characters.']);
         $conn->close();
         exit();
     }
 
-    // Hash the admin-chosen password
     $password = password_hash($raw_pass, PASSWORD_BCRYPT);
 
-    // Check for duplicate ID
     $check = $conn->prepare("SELECT IdNumber FROM student WHERE IdNumber = ?");
     $check->bind_param('s', $id);
     $check->execute();
@@ -179,6 +175,11 @@ $courses = [
     <title>CCS Admin - Students</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=DM+Serif+Display&display=swap" rel="stylesheet">
+
+    <!-- Export libraries -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 
     <style>
         :root {
@@ -264,7 +265,7 @@ $courses = [
 
         .page-header-left p { font-size: 12.5px; color: var(--muted); }
 
-        .action-bar { display: flex; gap: 10px; }
+        .action-bar { display: flex; gap: 10px; flex-wrap: wrap; }
 
         .btn-add {
             display: inline-flex; align-items: center; gap: 6px; padding: 8px 18px;
@@ -277,15 +278,49 @@ $courses = [
 
         .btn-add:hover { transform: translateY(-1px); box-shadow: 0 4px 14px rgba(15,38,83,0.32); }
 
-        .btn-reset {
-            display: inline-flex; align-items: center; gap: 6px; padding: 8px 18px;
-            background: white; color: #c0392b; border: 1.5px solid #e8b4b4;
+        /* ── Export buttons ── */
+        .btn-export {
+            display: inline-flex; align-items: center; gap: 6px; padding: 8px 16px;
             border-radius: 8px; font-size: 13px; font-weight: 700;
             font-family: 'DM Sans', sans-serif; cursor: pointer;
-            transition: background 0.15s, border-color 0.15s;
+            border: 1.5px solid transparent;
+            transition: transform 0.15s, box-shadow 0.15s, background 0.15s;
         }
 
-        .btn-reset:hover { background: #fff0f0; border-color: #e74c3c; }
+        .btn-export:hover { transform: translateY(-1px); }
+
+        .btn-export-pdf {
+            background: #fff0f0; color: #c0392b;
+            border-color: #f5c0c0;
+            box-shadow: 0 2px 6px rgba(192,57,43,0.12);
+        }
+
+        .btn-export-pdf:hover {
+            background: #ffe4e4; border-color: #e74c3c;
+            box-shadow: 0 4px 12px rgba(192,57,43,0.22);
+        }
+
+        .btn-export-excel {
+            background: #f0faf3; color: #1a7a3f;
+            border-color: #b5e0c4;
+            box-shadow: 0 2px 6px rgba(26,122,63,0.12);
+        }
+
+        .btn-export-excel:hover {
+            background: #ddf5e6; border-color: #27ae60;
+            box-shadow: 0 4px 12px rgba(26,122,63,0.22);
+        }
+
+        .btn-export-print {
+            background: #f4f6fb; color: var(--navy-light);
+            border-color: var(--border);
+            box-shadow: 0 2px 6px rgba(15,38,83,0.08);
+        }
+
+        .btn-export-print:hover {
+            background: var(--tag-bg); border-color: var(--accent);
+            box-shadow: 0 4px 12px rgba(59,111,212,0.18);
+        }
 
         .card {
             background: var(--panel); border-radius: 16px; overflow: hidden;
@@ -576,6 +611,25 @@ $courses = [
         .toast.success { background: #edfaf3; color: #1a6e3f; border-left: 4px solid #2ecc71; }
         .toast.error   { background: #fff0f0; color: #c0392b; border-left: 4px solid #e74c3c; }
 
+        /* ── Print styles ── */
+        @media print {
+            body * { visibility: hidden; }
+            #printArea, #printArea * { visibility: visible; }
+            #printArea {
+                position: absolute; inset: 0;
+                padding: 24px;
+            }
+            #printArea h2 { font-size: 18px; margin-bottom: 4px; color: #0f2653; }
+            #printArea p  { font-size: 11px; color: #666; margin-bottom: 16px; }
+            #printArea table { width: 100%; border-collapse: collapse; font-size: 11px; }
+            #printArea thead th {
+                background: #0f2653 !important; color: white !important;
+                padding: 8px 10px; text-align: left; -webkit-print-color-adjust: exact;
+            }
+            #printArea tbody td { padding: 7px 10px; border-bottom: 1px solid #e0e0e0; }
+            #printArea tbody tr:nth-child(even) td { background: #f4f6fb !important; -webkit-print-color-adjust: exact; }
+        }
+
         @media (max-width: 768px) {
             .nav-title { display: none; }
             .page-wrapper { padding: 20px 16px 40px; }
@@ -617,7 +671,9 @@ $courses = [
         </div>
         <div class="action-bar">
             <button class="btn-add" onclick="addStudent()">➕ Add Student</button>
-            <button class="btn-reset" onclick="resetSessions()">🔄 Reset All Sessions</button>
+            <button class="btn-export btn-export-pdf"   onclick="exportPDF()">📄 PDF</button>
+            <button class="btn-export btn-export-excel" onclick="exportExcel()">📊 Excel</button>
+            <button class="btn-export btn-export-print" onclick="exportPrint()">🖨️ Print</button>
         </div>
     </div>
 
@@ -706,6 +762,24 @@ $courses = [
     </div>
 </div>
 
+<!-- Hidden print area -->
+<div id="printArea" style="display:none;">
+    <h2>CCS Sit-in Monitoring System — Student Records</h2>
+    <p>Exported on <span id="printDate"></span></p>
+    <table id="printTable">
+        <thead>
+            <tr>
+                <th>ID Number</th>
+                <th>Name</th>
+                <th>Year Level</th>
+                <th>Course</th>
+                <th>Sessions</th>
+            </tr>
+        </thead>
+        <tbody id="printBody"></tbody>
+    </table>
+</div>
+
 <!-- ── ADD STUDENT MODAL ── -->
 <div class="modal-overlay" id="addModalOverlay">
     <div class="modal">
@@ -757,12 +831,10 @@ $courses = [
                 <input type="number" id="add_sessions" min="0" max="999" value="30">
             </div>
 
-            <!-- Password section divider -->
             <div class="modal-field" style="border-bottom:none; padding-bottom:0;">
                 <div class="pw-section-label">🔒 Set Password</div>
             </div>
 
-            <!-- Password input row -->
             <div class="modal-field" style="padding-top:6px;">
                 <label>Password <span style="color:#e74c3c;">*</span></label>
                 <div class="password-wrap">
@@ -776,7 +848,6 @@ $courses = [
                 </div>
             </div>
 
-            <!-- Strength bars -->
             <div class="modal-field" style="padding-top:2px; padding-bottom:2px; border-bottom:none;">
                 <span></span>
                 <div class="pw-strength-row">
@@ -787,7 +858,6 @@ $courses = [
                 </div>
             </div>
 
-            <!-- Hint text -->
             <div class="modal-field" style="padding-top:0; border-bottom:none;">
                 <span></span>
                 <span class="pw-hint" id="pwHint">
@@ -867,6 +937,109 @@ $courses = [
 
 <script>
     let activeRow = null;
+
+    // ── Collect all rows as data objects ──
+    function getAllStudentData() {
+        return Array.from(document.querySelectorAll('#tableBody tr:not(.empty-row)')).map(row => ({
+            id:       row.dataset.id      || '',
+            name:     row.querySelector('.col-name')?.textContent.trim()    || '',
+            year:     row.querySelector('.col-year')?.textContent.trim()    || '',
+            course:   row.querySelector('.col-course')?.textContent.trim()  || '',
+            sessions: row.dataset.sessions || '—',
+        }));
+    }
+
+    // ── Export: PDF ──
+    function exportPDF() {
+        const { jsPDF } = window.jspdf;
+        const doc = new jsPDF({ orientation: 'landscape', unit: 'pt', format: 'a4' });
+
+        doc.setFontSize(14);
+        doc.setTextColor(15, 38, 83);
+        doc.text('CCS Sit-in Monitoring System — Student Records', 40, 36);
+
+        doc.setFontSize(9);
+        doc.setTextColor(100);
+        doc.text('Exported: ' + new Date().toLocaleString(), 40, 52);
+
+        const rows = getAllStudentData().map(s => [s.id, s.name, s.year, s.course, s.sessions]);
+
+        doc.autoTable({
+            startY: 64,
+            head: [['ID Number', 'Name', 'Year Level', 'Course', 'Sessions']],
+            body: rows,
+            headStyles: {
+                fillColor: [15, 38, 83],
+                textColor: 255,
+                fontStyle: 'bold',
+                fontSize: 9,
+            },
+            bodyStyles: { fontSize: 9, textColor: [28, 43, 74] },
+            alternateRowStyles: { fillColor: [232, 237, 248] },
+            columnStyles: {
+                0: { cellWidth: 90 },
+                1: { cellWidth: 180 },
+                2: { cellWidth: 70 },
+                3: { cellWidth: 200 },
+                4: { cellWidth: 65, halign: 'center' },
+            },
+            margin: { left: 40, right: 40 },
+        });
+
+        doc.save('students_' + _dateStamp() + '.pdf');
+        showToast('📄 PDF exported successfully!', 'success');
+    }
+
+    // ── Export: Excel ──
+    function exportExcel() {
+        const rows = getAllStudentData().map(s => ({
+            'ID Number':  s.id,
+            'Name':       s.name,
+            'Year Level': s.year,
+            'Course':     s.course,
+            'Sessions':   s.sessions,
+        }));
+
+        const ws = XLSX.utils.json_to_sheet(rows);
+
+        // Column widths
+        ws['!cols'] = [
+            { wch: 16 }, { wch: 32 }, { wch: 12 }, { wch: 36 }, { wch: 10 }
+        ];
+
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, 'Students');
+        XLSX.writeFile(wb, 'students_' + _dateStamp() + '.xlsx');
+        showToast('📊 Excel file exported successfully!', 'success');
+    }
+
+    // ── Export: Print ──
+    function exportPrint() {
+        const rows  = getAllStudentData();
+        const tbody = document.getElementById('printBody');
+        tbody.innerHTML = '';
+
+        rows.forEach(s => {
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td>${s.id}</td>
+                <td>${s.name}</td>
+                <td>${s.year}</td>
+                <td>${s.course}</td>
+                <td style="text-align:center;">${s.sessions}</td>`;
+            tbody.appendChild(tr);
+        });
+
+        document.getElementById('printDate').textContent = new Date().toLocaleString();
+        document.getElementById('printArea').style.display = 'block';
+        window.print();
+        document.getElementById('printArea').style.display = 'none';
+    }
+
+    function _dateStamp() {
+        const d = new Date();
+        return d.getFullYear() + ('0'+(d.getMonth()+1)).slice(-2) + ('0'+d.getDate()).slice(-2);
+    }
 
     // ── Password helpers ──
     function togglePasswordVisibility() {
@@ -1165,11 +1338,6 @@ $courses = [
     function deleteStudent(id) {
         if (confirm('Are you sure you want to delete student ' + id + '?'))
             window.location.href = 'delete_student.php?id=' + id;
-    }
-
-    function resetSessions() {
-        if (confirm('Reset all student sessions? This cannot be undone.'))
-            window.location.href = 'reset_sessions.php';
     }
 </script>
 
