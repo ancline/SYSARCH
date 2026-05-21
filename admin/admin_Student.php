@@ -73,6 +73,67 @@ if (
     exit();
 }
 
+// ── AJAX: handle RESET SESSIONS POST, return JSON ──
+if (
+    $_SERVER['REQUEST_METHOD'] === 'POST' &&
+    isset($_POST['reset_sessions']) &&
+    !empty($_SERVER['HTTP_X_REQUESTED_WITH']) &&
+    strtolower($_SERVER['HTTP_X_REQUESTED_WITH']) === 'xmlhttprequest'
+) {
+    header('Content-Type: application/json');
+
+    $id = trim($_POST['id_number'] ?? '');
+    $reset_val = 30;
+
+    if (!$id) {
+        echo json_encode(['success' => false, 'message' => 'No ID provided.']);
+        $conn->close();
+        exit();
+    }
+
+    if ($session_col) {
+        $stmt = $conn->prepare("UPDATE student SET `$session_col`=? WHERE IdNumber=?");
+        $stmt->bind_param('is', $reset_val, $id);
+        if ($stmt->execute()) {
+            echo json_encode(['success' => true, 'id' => $id, 'sessions' => $reset_val]);
+        } else {
+            echo json_encode(['success' => false, 'message' => $conn->error]);
+        }
+        $stmt->close();
+    } else {
+        echo json_encode(['success' => false, 'message' => 'No sessions column found.']);
+    }
+
+    $conn->close();
+    exit();
+}
+
+// ── AJAX: handle RESET ALL SESSIONS POST, return JSON ──
+if (
+    $_SERVER['REQUEST_METHOD'] === 'POST' &&
+    isset($_POST['reset_all_sessions']) &&
+    !empty($_SERVER['HTTP_X_REQUESTED_WITH']) &&
+    strtolower($_SERVER['HTTP_X_REQUESTED_WITH']) === 'xmlhttprequest'
+) {
+    header('Content-Type: application/json');
+
+    $reset_val = 30;
+
+    if ($session_col) {
+        $result = $conn->query("UPDATE student SET `$session_col`=$reset_val");
+        if ($result) {
+            echo json_encode(['success' => true, 'affected' => $conn->affected_rows]);
+        } else {
+            echo json_encode(['success' => false, 'message' => $conn->error]);
+        }
+    } else {
+        echo json_encode(['success' => false, 'message' => 'No sessions column found.']);
+    }
+
+    $conn->close();
+    exit();
+}
+
 // ── AJAX: handle ADD POST, return JSON ──
 if (
     $_SERVER['REQUEST_METHOD'] === 'POST' &&
@@ -398,6 +459,29 @@ $courses = [
 
         .btn-edit:hover { opacity: 0.88; transform: translateY(-1px); }
 
+        .btn-reset {
+            padding: 5px 14px; background: white; color: #1a7a3f;
+            border: 1.5px solid #b5e0c4; border-radius: 6px;
+            font-size: 12px; font-weight: 600; font-family: 'DM Sans', sans-serif;
+            cursor: pointer; margin-right: 5px; transition: background 0.15s, border-color 0.15s;
+        }
+
+        .btn-reset:hover { background: #f0faf3; border-color: #27ae60; }
+
+        .btn-reset-all {
+            display: inline-flex; align-items: center; gap: 6px; padding: 8px 16px;
+            background: #f0faf3; color: #1a7a3f;
+            border: 1.5px solid #b5e0c4; border-radius: 8px;
+            font-size: 13px; font-weight: 700; font-family: 'DM Sans', sans-serif;
+            cursor: pointer; box-shadow: 0 2px 6px rgba(26,122,63,0.12);
+            transition: transform 0.15s, box-shadow 0.15s, background 0.15s, border-color 0.15s;
+        }
+
+        .btn-reset-all:hover {
+            background: #ddf5e6; border-color: #27ae60;
+            transform: translateY(-1px); box-shadow: 0 4px 12px rgba(26,122,63,0.22);
+        }
+
         .btn-delete {
             padding: 5px 14px; background: white; color: #c0392b;
             border: 1.5px solid #e8b4b4; border-radius: 6px;
@@ -671,6 +755,7 @@ $courses = [
         </div>
         <div class="action-bar">
             <button class="btn-add" onclick="addStudent()">➕ Add Student</button>
+            <button class="btn-reset-all" onclick="resetAllSessions()">🔄 Reset All Sessions</button>
             <button class="btn-export btn-export-pdf"   onclick="exportPDF()">📄 PDF</button>
             <button class="btn-export btn-export-excel" onclick="exportExcel()">📊 Excel</button>
             <button class="btn-export btn-export-print" onclick="exportPrint()">🖨️ Print</button>
@@ -742,6 +827,7 @@ $courses = [
                         </td>
                         <td>
                             <button class="btn-edit" onclick="openEditModal(this)">✏️ Edit</button>
+                            <button class="btn-reset" onclick="resetSessions('<?= htmlspecialchars($s['IdNumber']) ?>')">🔄 Reset</button>
                             <button class="btn-delete" onclick="deleteStudent('<?= htmlspecialchars($s['IdNumber']) ?>')">🗑️ Delete</button>
                         </td>
                     </tr>
@@ -1209,6 +1295,7 @@ $courses = [
                     </td>
                     <td>
                         <button class="btn-edit" onclick="openEditModal(this)">✏️ Edit</button>
+                        <button class="btn-reset" onclick="resetSessions('${data.id}')">🔄 Reset</button>
                         <button class="btn-delete" onclick="deleteStudent('${data.id}')">🗑️ Delete</button>
                     </td>`;
 
@@ -1288,6 +1375,48 @@ $courses = [
         .finally(() => { btn.disabled = false; btn.textContent = '💾 Save Changes'; });
     }
 
+    // ── Reset sessions to 30 ──
+    function resetSessions(id) {
+        if (!confirm('Reset sessions for student ' + id + ' back to 30?')) return;
+
+        const payload = new FormData();
+        payload.append('reset_sessions', '1');
+        payload.append('id_number', id);
+
+        fetch(window.location.href, {
+            method: 'POST',
+            headers: { 'X-Requested-With': 'XMLHttpRequest' },
+            body: payload
+        })
+        .then(r => r.json())
+        .then(data => {
+            if (data.success) {
+                const row = document.querySelector(`#tableBody tr[data-id="${id}"]`);
+                if (row) {
+                    row.dataset.sessions = 30;
+                    const sessCell = row.querySelector('.col-sessions');
+                    let badge = sessCell.querySelector('.sess-badge');
+                    if (!badge) {
+                        badge = document.createElement('span');
+                        badge.className = 'sess-badge';
+                        badge.style.cssText = 'display:inline-flex;align-items:center;gap:5px;background:var(--tag-bg);border:1px solid var(--border);border-radius:20px;padding:3px 11px;font-size:11.5px;font-weight:700;color:var(--navy-light);';
+                        sessCell.innerHTML = '';
+                        sessCell.appendChild(badge);
+                    }
+                    badge.textContent = '💻 30';
+
+                    row.classList.remove('updated');
+                    void row.offsetWidth;
+                    row.classList.add('updated');
+                }
+                showToast('✅ Sessions for ' + id + ' reset to 30!', 'success');
+            } else {
+                showToast('❌ Reset failed: ' + (data.message || 'Unknown error'), 'error');
+            }
+        })
+        .catch(() => showToast('❌ Network error. Please try again.', 'error'));
+    }
+
     // ── Toast ──
     function showToast(msg, type) {
         const t = document.getElementById('toast');
@@ -1333,6 +1462,45 @@ $courses = [
         rows.sort((a, b) => (a.cells[col]?.innerText.trim() ?? '').localeCompare(b.cells[col]?.innerText.trim() ?? ''));
         rows.forEach(r => tbody.appendChild(r));
         applyFilter();
+    }
+
+    // ── Reset ALL students' sessions to 30 ──
+    function resetAllSessions() {
+        if (!confirm('Reset sessions to 30 for ALL students? This cannot be undone.')) return;
+
+        const payload = new FormData();
+        payload.append('reset_all_sessions', '1');
+
+        fetch(window.location.href, {
+            method: 'POST',
+            headers: { 'X-Requested-With': 'XMLHttpRequest' },
+            body: payload
+        })
+        .then(r => r.json())
+        .then(data => {
+            if (data.success) {
+                document.querySelectorAll('#tableBody tr:not(.empty-row)').forEach(row => {
+                    row.dataset.sessions = 30;
+                    const sessCell = row.querySelector('.col-sessions');
+                    let badge = sessCell.querySelector('.sess-badge');
+                    if (!badge) {
+                        badge = document.createElement('span');
+                        badge.className = 'sess-badge';
+                        badge.style.cssText = 'display:inline-flex;align-items:center;gap:5px;background:var(--tag-bg);border:1px solid var(--border);border-radius:20px;padding:3px 11px;font-size:11.5px;font-weight:700;color:var(--navy-light);';
+                        sessCell.innerHTML = '';
+                        sessCell.appendChild(badge);
+                    }
+                    badge.textContent = '💻 30';
+                    row.classList.remove('updated');
+                    void row.offsetWidth;
+                    row.classList.add('updated');
+                });
+                showToast(`✅ All sessions reset to 30! (${data.affected} students updated)`, 'success');
+            } else {
+                showToast('❌ Reset failed: ' + (data.message || 'Unknown error'), 'error');
+            }
+        })
+        .catch(() => showToast('❌ Network error. Please try again.', 'error'));
     }
 
     function deleteStudent(id) {
